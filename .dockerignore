@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+build
+.git
+.gitignore
+.DS_Store
+.env*.local
+bash.exe.stackdump
+*.sh
+.claude

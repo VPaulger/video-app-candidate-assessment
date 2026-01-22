@@ -267,7 +267,7 @@ function VideoCreationPage() {
           const maxScroll = Math.max(0, totalWidthAfter - visibleWidthAfter);
           newScrollLeft = Math.max(0, Math.min(newScrollLeft, maxScroll));
 
-          // timelineContent.scrollLeft = newScrollLeft;
+          timelineContent.scrollLeft = newScrollLeft;
         });
       }
     },
