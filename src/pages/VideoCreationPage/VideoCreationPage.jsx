@@ -223,6 +223,7 @@ function VideoCreationPage() {
   });
 
   const videoPanelRef = useRef(null);
+  const timelineContentRef = useRef(null);
   const transitionPanelRef = useRef(null);
   const frameEditingPanelRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -248,28 +249,30 @@ function VideoCreationPage() {
       );
       localStorage.setItem('timeline-scale', String(data.newValue));
 
-      const timelineContent = document.querySelector(
-        '[class*="Player_timelineContent"]'
-      );
-      if (timelineContent && store) {
-        const maxTime = Math.max(1, store.maxTime || 1);
-        const thumbRatio = Math.max(
-          0,
-          Math.min(1, store.currentTimeInMs / maxTime)
-        );
+      // Use ref instead of querySelector for reliable access
+      const timelineContent =
+        timelineContentRef.current ||
+        document.querySelector('[class*="Player_timelineContent"]');
+      if (!timelineContent) return;
 
-        requestAnimationFrame(() => {
-          const totalWidthAfter = timelineContent.scrollWidth;
-          const visibleWidthAfter = timelineContent.clientWidth;
-          const thumbPosAfter = thumbRatio * totalWidthAfter;
+      // Get anchor from data if available
+      const anchor = data.anchor;
 
-          let newScrollLeft = thumbPosAfter - visibleWidthAfter / 2;
-          const maxScroll = Math.max(0, totalWidthAfter - visibleWidthAfter);
-          newScrollLeft = Math.max(0, Math.min(newScrollLeft, maxScroll));
+      if (!anchor) return;
 
-          // timelineContent.scrollLeft = newScrollLeft;
-        });
-      }
+      const { cursorX, scrollLeft, timeLine } = anchor;
+
+      requestAnimationFrame(() => {
+        const newScrollWidth = timeLine.scrollWidth;
+
+        const ratio = (scrollLeft + cursorX) / oldScrollWidth;
+        let nextScrollLeft = ratio * newScrollWidth - cursorX;
+
+        const maxScroll = Math.max(0, newScrollWidth - visibleWidth);
+        nextScrollLeft = Math.max(0, Math.min(nextScrollLeft, maxScroll));
+
+        timeLine.scrollLeft = nextScrollLeft;
+      });
     },
   });
   const [isMuted, setIsMuted] = useLocalStorage('audio-muted', false);
@@ -1727,12 +1730,26 @@ function VideoCreationPage() {
       event.preventDefault();
       event.stopPropagation();
 
+      const timelineContent = timelineContentRef.current;
+      if (!timelineContent) return;
+
+      // Calculate cursor position relative to timeline
+      const rect = timelineContent.getBoundingClientRect();
+      const cursorX = event.clientX - rect.left;
+
+      // Create anchor point: cursor position in timeline coordinates
+      const anchor = {
+        cursorX, // Cursor position relative to timeline viewport
+        scrollLeft, // Current scroll position
+        timeLine: timelineContent, // Reference to timeline element
+      };
+
       const delta = event.deltaY > 0 ? -1 : 1;
 
       if (delta > 0) {
-        zoomIn(1);
+        zoomIn(1, anchor);
       } else {
-        zoomOut(1);
+        zoomOut(1, anchor);
       }
     },
     [zoomIn, zoomOut]
@@ -1858,6 +1875,13 @@ function VideoCreationPage() {
       }
     };
   }, [handleScaleWheel, handleVolumeWheel]);
+
+  // Initialize timeline content ref
+  useEffect(() => {
+    timelineContentRef.current = document.querySelector(
+      '[class*="Player_timelineContent"]'
+    );
+  }, []);
 
   // Add effect to initialize range styles on mount
   useEffect(() => {
@@ -3054,8 +3078,8 @@ function VideoCreationPage() {
                     i.name === 'lyra'
                       ? handleLyraClick
                       : i.name === 'download'
-                      ? handleDownloadClick
-                      : () => handleClick(i.name)
+                        ? handleDownloadClick
+                        : () => handleClick(i.name)
                   }
                   classNameButton={`${styles.header_navigate_btn} ${
                     i.name !== 'download' && activeScreens.includes(i.name)
@@ -3174,6 +3198,7 @@ function VideoCreationPage() {
                         screen === 'playback' ? 'translateX(-50%)' : 'none',
                     }}
                   >
+                    {/*
                     <VideoPanel
                       storyData={storyData}
                       isMuted={isMuted}
@@ -3195,7 +3220,7 @@ function VideoCreationPage() {
                       screen={screen}
                       isSelectedElementsAudio={isSelectedElementsAudio}
                       selectedAudioElements={selectedAudioElements}
-                    />
+                    />                      */}
                   </div>
                 </div>
               </div>
@@ -3267,8 +3292,8 @@ function VideoCreationPage() {
                   store?.isInitializationInProgress
                     ? 'Loading timeline....'
                     : isInitializing.current && !isInitialized
-                    ? 'Loading story data....'
-                    : 'Loading timeline....'
+                      ? 'Loading story data....'
+                      : 'Loading timeline....'
                 }
               />
             </Rnd>
