@@ -223,6 +223,7 @@ function VideoCreationPage() {
   });
 
   const videoPanelRef = useRef(null);
+  const timelineContentRef = useRef(null);
   const transitionPanelRef = useRef(null);
   const frameEditingPanelRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -258,16 +259,26 @@ function VideoCreationPage() {
           Math.min(1, store.currentTimeInMs / maxTime)
         );
 
+        const anchor = data.anchor;
+        if (!anchor) return;
+        
+        const { cursorX, scrollLeft, timeLine } = anchor;
+        
         requestAnimationFrame(() => {
-          const totalWidthAfter = timelineContent.scrollWidth;
-          const visibleWidthAfter = timelineContent.clientWidth;
-          const thumbPosAfter = thumbRatio * totalWidthAfter;
-
-          let newScrollLeft = thumbPosAfter - visibleWidthAfter / 2;
-          const maxScroll = Math.max(0, totalWidthAfter - visibleWidthAfter);
-          newScrollLeft = Math.max(0, Math.min(newScrollLeft, maxScroll));
-
-          // timelineContent.scrollLeft = newScrollLeft;
+          const oldScrollWidth = timeLine.scrollWidth;
+          const visibleWidth = timeLine.clientWidth;
+        
+          requestAnimationFrame(() => {
+            const newScrollWidth = timeLine.scrollWidth;
+        
+            const ratio = (scrollLeft + cursorX) / oldScrollWidth;
+            let nextScrollLeft = ratio * newScrollWidth - cursorX;
+        
+            const maxScroll = Math.max(0, newScrollWidth - visibleWidth);
+            nextScrollLeft = Math.max(0, Math.min(nextScrollLeft, maxScroll));
+        
+            timeLine.scrollLeft = nextScrollLeft;
+          });
         });
       }
     },
@@ -1722,17 +1733,31 @@ function VideoCreationPage() {
   const scaleContainerRef = useRef(null);
   const volumeContainerRef = useRef(null);
 
+  useEffect(() => {
+    timelineContentRef.current = document.querySelector(
+      '[class*="Player_timelineContent"]'
+    );
+  }, []);
+
   const handleScaleWheel = useCallback(
     event => {
       event.preventDefault();
       event.stopPropagation();
-
+      const timeLine = timelineContentRef.current;
+      if (!timeLine) return;
+      const rect = timeLine.getBoundingClientRect();
+      const cursorX = event.clientX - rect.left;
       const delta = event.deltaY > 0 ? -1 : 1;
-
+      
+      const anchor = {
+        cursorX,
+        scrollLeft: timeLine.scrollLeft,
+        timeLine,
+      };
       if (delta > 0) {
-        zoomIn(1);
+        zoomIn(1,anchor);
       } else {
-        zoomOut(1);
+        zoomOut(1,anchor);
       }
     },
     [zoomIn, zoomOut]
