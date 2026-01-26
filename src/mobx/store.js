@@ -4663,8 +4663,11 @@ export class Store {
       videoElement.preload = 'auto';
       videoElement.playsInline = true;
       videoElement.muted = true;
-      videoElement.crossOrigin = 'anonymous';
-      videoElement.src = `${url}?v=${Date.now()}`;
+      const isBlob = url.startsWith('blob:');
+      if (!isBlob) {
+        videoElement.crossOrigin = 'anonymous';
+      }
+      videoElement.src = isBlob ? url : `${url}?v=${Date.now()}`;
       videoElement.style.display = 'none';
       videoElement.muted = false;
       videoElement.volume = 1.0;
@@ -5182,10 +5185,15 @@ export class Store {
   addImageLocal({ url, minUrl, startTime = 0, endTime, row = 0 }) {
     return new Promise((resolve, reject) => {
       const imageElement = new Image();
-      imageElement.crossOrigin = 'Anonymous';
-      // Add cache busting parameter to force fresh CORS load
-      const cacheBustUrl =
-        url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now();
+      // Skip crossOrigin for blob URLs (same-origin, no CORS needed)
+      const isBlob = url.startsWith('blob:');
+      if (!isBlob) {
+        imageElement.crossOrigin = 'Anonymous';
+      }
+      // Add cache busting parameter to force fresh CORS load (skip for blob URLs)
+      const cacheBustUrl = isBlob
+        ? url
+        : url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now();
       imageElement.src = cacheBustUrl;
 
       imageElement.onload = () => {
@@ -5289,9 +5297,8 @@ export class Store {
 
               resolve();
             },
-            {
-              crossOrigin: 'Anonymous',
-            }
+            // Skip crossOrigin for blob URLs
+            isBlob ? {} : { crossOrigin: 'Anonymous' }
           );
         } catch (error) {
           console.error('Error loading image:', error);
@@ -5343,10 +5350,15 @@ export class Store {
 
     return new Promise((resolve, reject) => {
       const imageElement = new Image();
-      imageElement.crossOrigin = 'Anonymous';
-      // Add cache busting parameter to force fresh CORS load
-      const cacheBustUrl =
-        url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now();
+      // Skip crossOrigin for blob URLs (same-origin, no CORS needed)
+      const isBlob = url.startsWith('blob:');
+      if (!isBlob) {
+        imageElement.crossOrigin = 'Anonymous';
+      }
+      // Add cache busting parameter to force fresh CORS load (skip for blob URLs)
+      const cacheBustUrl = isBlob
+        ? url
+        : url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now();
       imageElement.src = cacheBustUrl;
 
       imageElement.onload = () => {
@@ -5418,8 +5430,8 @@ export class Store {
 
               resolve();
             },
-            null,
-            { crossOrigin: 'anonymous' }
+            // Skip crossOrigin for blob URLs
+            isBlob ? {} : { crossOrigin: 'anonymous' }
           );
         } catch (error) {
           console.error('Error during refreshElements:', error);
@@ -5455,10 +5467,15 @@ export class Store {
 
     return new Promise((resolve, reject) => {
       const imageElement = new Image();
-      imageElement.crossOrigin = 'Anonymous';
-      // Add cache busting parameter to force fresh CORS load
-      const cacheBustUrl =
-        url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now();
+      // Skip crossOrigin for blob URLs (same-origin, no CORS needed)
+      const isBlob = url.startsWith('blob:');
+      if (!isBlob) {
+        imageElement.crossOrigin = 'Anonymous';
+      }
+      // Add cache busting parameter to force fresh CORS load (skip for blob URLs)
+      const cacheBustUrl = isBlob
+        ? url
+        : url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now();
       imageElement.src = cacheBustUrl;
 
       imageElement.onload = () => {
@@ -5508,7 +5525,8 @@ export class Store {
 
               resolve();
             },
-            { crossOrigin: 'anonymous' }
+            // Skip crossOrigin for blob URLs
+            isBlob ? {} : { crossOrigin: 'anonymous' }
           );
         } catch (error) {
           console.error('Error during refreshElements:', error);
@@ -13803,6 +13821,184 @@ export class Store {
     this.ghostState.dragOverRowIndex = null;
 
     this.refreshElements?.();
+  });
+
+  // File ghost drag methods for native file drops
+  startFileGhostDrag = action((file, elementType, duration) => {
+    this.ghostState.isFileDragging = true;
+    this.ghostState.fileData = {
+      file,
+      elementType,
+      duration,
+      name: file?.name || 'Unknown file',
+    };
+    this.ghostState.fileGhostElement = {
+      type: elementType,
+      duration: duration,
+      name: file?.name || 'Unknown file',
+    };
+  });
+
+  updateFileGhost = action((position, row) => {
+    if (!this.ghostState.isFileDragging) return;
+    this.ghostState.fileGhostElement = {
+      ...this.ghostState.fileGhostElement,
+      position,
+      row,
+    };
+  });
+
+  finishFileGhostDrag = action((position, row, callback) => {
+    if (!this.ghostState.isFileDragging) return;
+
+    const fileData = this.ghostState.fileData;
+
+    // Reset ghost state
+    this.ghostState.isFileDragging = false;
+    this.ghostState.fileGhostElement = null;
+    this.ghostState.fileData = null;
+
+    // Execute callback with position and row
+    if (typeof callback === 'function') {
+      callback(position, row, fileData);
+    }
+  });
+
+  cancelFileGhostDrag = action(() => {
+    this.ghostState.isFileDragging = false;
+    this.ghostState.fileGhostElement = null;
+    this.ghostState.fileData = null;
+  });
+
+  // Reset all ghost state to initial values
+  resetGhostState = action(() => {
+    this.ghostState.isDragging = false;
+    this.ghostState.ghostElement = null;
+    this.ghostState.ghostMarkerPosition = null;
+    this.ghostState.draggedElement = null;
+    this.ghostState.alignmentLines = [];
+    this.ghostState.isIncompatibleRow = false;
+    this.ghostState.initialClickOffset = 0;
+    this.ghostState.initialClientX = null;
+    this.ghostState.initialElementStart = 0;
+    this.ghostState.isResizing = false;
+    this.ghostState.resizeType = null;
+    this.ghostState.resizeGhostElement = null;
+    this.ghostState.isMultiDragging = false;
+    this.ghostState.multiGhostElements = [];
+    this.ghostState.selectedElements = [];
+    this.ghostState.initialElementStarts = [];
+    this.ghostState.livePushOffsets = new Map();
+    this.ghostState.isGalleryDragging = false;
+    this.ghostState.galleryGhostElement = null;
+    this.ghostState.galleryItemData = null;
+    this.ghostState.isFileDragging = false;
+    this.ghostState.fileGhostElement = null;
+    this.ghostState.fileData = null;
+    this.ghostState.isDraggingRow = false;
+    this.ghostState.draggedRowIndex = null;
+    this.ghostState.dragOverRowIndex = null;
+    this.ghostState.rowInsertPosition = null;
+  });
+
+  splitVideoElement = action((item, splitPoint) => {
+    if (!item || item.type !== 'video') return;
+
+    const { timeFrame, properties } = item;
+
+    if (splitPoint <= timeFrame.start || splitPoint >= timeFrame.end) return;
+
+    const firstPartDuration = splitPoint - timeFrame.start;
+    const existingVideoOffset = properties?.videoOffset || 0;
+
+    const firstClip = {
+      ...item,
+      timeFrame: { start: timeFrame.start, end: splitPoint },
+      properties: { ...properties, videoOffset: existingVideoOffset },
+    };
+
+    const secondClip = {
+      ...item,
+      id: getUid(),
+      timeFrame: { start: splitPoint, end: timeFrame.end },
+      properties: {
+        ...properties,
+        videoOffset: existingVideoOffset + firstPartDuration,
+        elementId: `video-${getUid()}`,
+      },
+    };
+
+    this.updateEditorElement(firstClip);
+    this.editorElements.push(secondClip);
+    this.refreshElements();
+
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+  });
+
+  splitAudioElement = action((item, splitPoint) => {
+    if (!item || item.type !== 'audio') return;
+
+    const { timeFrame, properties } = item;
+
+    if (splitPoint <= timeFrame.start || splitPoint >= timeFrame.end) return;
+
+    const firstPartDuration = splitPoint - timeFrame.start;
+    const existingAudioOffset = properties?.audioOffset || 0;
+
+    const firstClip = {
+      ...item,
+      timeFrame: { start: timeFrame.start, end: splitPoint },
+      properties: { ...properties, audioOffset: existingAudioOffset },
+    };
+
+    const secondClip = {
+      ...item,
+      id: getUid(),
+      timeFrame: { start: splitPoint, end: timeFrame.end },
+      properties: {
+        ...properties,
+        audioOffset: existingAudioOffset + firstPartDuration,
+        elementId: `audio-${getUid()}`,
+      },
+    };
+
+    this.updateEditorElement(firstClip);
+    this.addEditorElement(secondClip);
+    this.refreshElements();
+
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+  });
+
+  splitImageElement = action((item, splitPoint) => {
+    if (!item || (item.type !== 'imageUrl' && item.type !== 'image')) return;
+
+    const { timeFrame } = item;
+
+    if (splitPoint <= timeFrame.start || splitPoint >= timeFrame.end) return;
+
+    const firstClip = {
+      ...item,
+      timeFrame: { start: timeFrame.start, end: splitPoint },
+    };
+
+    const secondClip = {
+      ...item,
+      id: getUid(),
+      timeFrame: { start: splitPoint, end: timeFrame.end },
+      fabricObject: null,
+    };
+
+    this.updateEditorElement(firstClip);
+    this.editorElements.push(secondClip);
+    this.refreshElements();
+
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
   });
 }
 
