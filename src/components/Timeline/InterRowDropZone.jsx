@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useContext } from 'react';
 import { useDrop, useDragDropManager } from 'react-dnd';
 import styles from './Timeline.module.scss';
 import { StoreContext } from '../../mobx';
-import { uploadImage } from '../../utils/uploadImage';
 import { getUid } from 'utils';
+import { handleFileDropToTimeline } from '../../utils/fileUploadToTimeline';
 
 const InterRowDropZone = ({
   rowIndex,
@@ -79,6 +79,57 @@ const InterRowDropZone = ({
   useEffect(() => {
     setIsFileDragActive(store.ghostState.isFileDragging);
   }, [store.ghostState.isFileDragging]);
+
+  // Detect native file drags from OS (dragenter/dragleave on document)
+  useEffect(() => {
+    let dragCounter = 0;
+
+    const handleDragEnter = (e) => {
+      // Check if dragging files from OS
+      if (e.dataTransfer?.types?.includes('Files')) {
+        dragCounter++;
+        if (dragCounter === 1) {
+          // First enter - activate file drag mode
+          setIsFileDragActive(true);
+        }
+      }
+    };
+
+    const handleDragLeave = (e) => {
+      if (e.dataTransfer?.types?.includes('Files')) {
+        dragCounter--;
+        if (dragCounter === 0) {
+          // Left the window - deactivate file drag mode
+          setIsFileDragActive(false);
+        }
+      }
+    };
+
+    const handleDrop = () => {
+      // Reset on drop
+      dragCounter = 0;
+      setIsFileDragActive(false);
+    };
+
+    const handleDragOver = (e) => {
+      // Prevent default to allow drop
+      if (e.dataTransfer?.types?.includes('Files')) {
+        e.preventDefault();
+      }
+    };
+
+    document.addEventListener('dragenter', handleDragEnter);
+    document.addEventListener('dragleave', handleDragLeave);
+    document.addEventListener('drop', handleDrop);
+    document.addEventListener('dragover', handleDragOver);
+
+    return () => {
+      document.removeEventListener('dragenter', handleDragEnter);
+      document.removeEventListener('dragleave', handleDragLeave);
+      document.removeEventListener('drop', handleDrop);
+      document.removeEventListener('dragover', handleDragOver);
+    };
+  }, []);
 
   // Add global mouse tracking to handle cases where resizable handles interfere
   useEffect(() => {
@@ -645,70 +696,8 @@ const InterRowDropZone = ({
                   finalPosition,
                   targetRow,
                   async (startTime, finalTargetRow) => {
-                    // Create new row for the file
                     store.shiftRowsDown(finalTargetRow);
-
-                    // Handle different file types - implement actual file upload logic
-                    await handleFileDropWithPosition(
-                      file,
-                      startTime,
-                      finalTargetRow
-                    );
-
-                    async function handleFileDropWithPosition(
-                      file,
-                      startTime,
-                      targetRow
-                    ) {
-                      if (file.type.startsWith('audio/')) {
-                      } else if (file.type.startsWith('image/')) {
-                        try {
-                          const formData = new FormData();
-                          formData.append('image', file);
-                          const response = await uploadImage(formData);
-
-                          if (response) {
-                            await store.addImageLocal({
-                              url: response.data.url,
-                              minUrl: response.data.minUrl,
-                              row: targetRow,
-                              startTime: startTime,
-                            });
-                          }
-                        } catch (error) {
-                          console.error('Error uploading image:', error);
-                        }
-                      } else if (file.type.startsWith('video/')) {
-                        try {
-                          // Handle video locally for immediate preview
-                          await store.handleVideoUpload(file);
-
-                          // Get video duration
-                          const duration = await new Promise(resolve => {
-                            const video = document.createElement('video');
-                            video.preload = 'metadata';
-                            video.onloadedmetadata = () => {
-                              resolve(video.duration * 1000); // Convert to milliseconds
-                            };
-                            video.src = URL.createObjectURL(file);
-                          });
-
-                          // For now, just add to timeline with local URL
-                          // Full AWS upload would happen in background
-                          await store.handleVideoUploadFromUrl({
-                            url: URL.createObjectURL(file),
-                            title: file.name,
-                            key: null,
-                            duration: duration,
-                            row: targetRow,
-                            startTime: startTime,
-                            isNeedLoader: false,
-                          });
-                        } catch (error) {
-                          console.error('Error uploading video:', error);
-                        }
-                      }
-                    }
+                    await handleFileDropToTimeline(store, file, finalTargetRow, startTime);
                   }
                 );
                 return;
@@ -718,54 +707,7 @@ const InterRowDropZone = ({
 
           // Fallback: create new row at position 0
           store.shiftRowsDown(targetRow);
-
-          // Handle file upload without ghost position
-          if (file.type.startsWith('audio/')) {
-          } else if (file.type.startsWith('image/')) {
-            try {
-              const formData = new FormData();
-              formData.append('image', file);
-              const response = await uploadImage(formData);
-              if (response) {
-                await store.addImageLocal({
-                  url: response.data.url,
-                  minUrl: response.data.minUrl,
-                  row: targetRow,
-                  startTime: 0,
-                });
-              }
-            } catch (error) {
-              console.error('Error uploading image:', error);
-            }
-          } else if (file.type.startsWith('video/')) {
-            try {
-              // Handle video locally for immediate preview
-              await store.handleVideoUpload(file);
-
-              // Get video duration
-              const duration = await new Promise(resolve => {
-                const video = document.createElement('video');
-                video.preload = 'metadata';
-                video.onloadedmetadata = () => {
-                  resolve(video.duration * 1000); // Convert to milliseconds
-                };
-                video.src = URL.createObjectURL(file);
-              });
-
-              // Add to timeline with local URL
-              await store.handleVideoUploadFromUrl({
-                url: URL.createObjectURL(file),
-                title: file.name,
-                key: null,
-                duration: duration,
-                row: targetRow,
-                startTime: 0,
-                isNeedLoader: false,
-              });
-            } catch (error) {
-              console.error('Error uploading video:', error);
-            }
-          }
+          await handleFileDropToTimeline(store, file, targetRow, 0);
         }
         return;
       }

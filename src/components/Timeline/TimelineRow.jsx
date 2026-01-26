@@ -24,6 +24,8 @@ import { uploadVideoToAWS } from '../../utils/awsUpload';
 import { saveVideoData } from '../../utils/saveVideoMetadata';
 import { user as selectUser } from '../../redux/auth/selectors';
 import { Resizable } from 'react-resizable';
+import { handleCatchError } from '../../utils/errorHandler';
+import { handleFileDropToTimeline } from '../../utils/fileUploadToTimeline';
 
 // Helper function to check if element types are compatible for mixing on same row
 const areTypesCompatible = (type1, type2) => {
@@ -1342,74 +1344,8 @@ const TimelineRow = observer(
       }),
     });
 
-    const handleFileDropWithPosition = async (file, startTime, targetRow) => {
-      if (file.type.startsWith('audio/')) {
-      } else if (file.type.startsWith('image/')) {
-        try {
-          const formData = new FormData();
-          formData.append('image', file);
-
-          const response = await uploadImage(formData);
-
-          if (response) {
-            await store.addImageLocal({
-              url: response.data.url,
-              minUrl: response.data.minUrl,
-              row: targetRow,
-              startTime: startTime,
-            });
-          }
-        } catch (error) {
-          handleCatchError(error, 'Failed to upload image');
-        }
-      } else if (file.type.startsWith('video/')) {
-        try {
-          // Handle video locally for immediate preview
-          await store.handleVideoUpload(file);
-
-          // Get video duration
-          const duration = await new Promise(resolve => {
-            const video = document.createElement('video');
-            video.preload = 'metadata';
-            video.onloadedmetadata = () => {
-              resolve(video.duration * 1000); // Convert to milliseconds
-            };
-            video.src = URL.createObjectURL(file);
-          });
-
-          // Upload to AWS in the background
-          const { url, key } = await uploadVideoToAWS(file, progress => {
-            // Progress callback for video upload
-          });
-
-          // Save video metadata
-          const videoData = {
-            key: key,
-            s3Url: url,
-            title: file.name,
-            length: duration / 1000, // Convert back to seconds for saveVideoData
-          };
-
-          const saved = await saveVideoData(
-            videoData,
-            store.currentStoryId,
-            user
-          );
-
-          // Update store with uploaded video
-          store.handleVideoUploadFromUrl({
-            url: url,
-            title: file.name,
-            key: key,
-            duration: duration,
-            row: targetRow,
-            startTime: startTime,
-            isNeedLoader: false,
-          });
-        } catch (error) {
-          handleCatchError(error, 'Failed to upload video');
-        }
-      }
+    const handleFileDropWithPositionLocal = async (file, startTime, targetRow) => {
+      await handleFileDropToTimeline(store, file, targetRow, startTime);
     };
 
     const onFileDrop = async e => {
@@ -1439,7 +1375,7 @@ const TimelineRow = observer(
               finalPosition,
               rowIndex,
               async (startTime, targetRow) => {
-                await handleFileDropWithPosition(file, startTime, targetRow);
+                await handleFileDropWithPositionLocal(file, startTime, targetRow);
               }
             );
             return;
@@ -1450,86 +1386,149 @@ const TimelineRow = observer(
           file.type.startsWith('audio/') &&
           (!overlays.length || areTypesCompatible(overlays[0]?.type, 'audio'))
         ) {
+          // Handle audio drop
+          try {
+            const audio = new Audio();
+            const audioUrl = URL.createObjectURL(file);
+            const duration = await new Promise((resolve) => {
+              audio.onloadedmetadata = () => resolve(audio.duration * 1000);
+              audio.onerror = () => resolve(5000);
+              audio.src = audioUrl;
+            });
+
+            await store.addExistingAudio({
+              base64Audio: audioUrl,
+              durationMs: duration,
+              row: rowIndex,
+              startTime: 0,
+              audioType: 'music',
+              id: `audio-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              name: file.name,
+            });
+          } catch (error) {
+            handleCatchError(error, 'Failed to add audio');
+          }
         } else if (file.type.startsWith('image/')) {
           try {
-            const formData = new FormData();
-            formData.append('image', file);
+            // Use local URL immediately for UI
+            const localUrl = URL.createObjectURL(file);
 
-            const response = await uploadImage(formData);
+            // Check if current row is empty or compatible with imageUrl type
+            if (
+              !overlays.length ||
+              areTypesCompatible(overlays[0]?.type, 'imageUrl')
+            ) {
+              // Check if there's enough space in current row
+              const rowElements = store.editorElements.filter(
+                el => el.row === rowIndex
+              );
 
-            if (response) {
-              // Check if current row is empty or compatible with imageUrl type
-              if (
-                !overlays.length ||
-                areTypesCompatible(overlays[0]?.type, 'imageUrl')
-              ) {
-                // Check if there's enough space in current row
-                const rowElements = store.editorElements.filter(
-                  el => el.row === rowIndex
+              // Find first available position
+              let startTime = 0;
+              let hasSpace = true;
+
+              if (rowElements.length > 0) {
+                // Sort elements by start time
+                const sortedElements = [...rowElements].sort(
+                  (a, b) => a.timeFrame.start - b.timeFrame.start
                 );
 
-                // Find first available position
-                let startTime = 0;
-                let hasSpace = true;
+                hasSpace = false; // Reset hasSpace before checking gaps
 
-                if (rowElements.length > 0) {
-                  // Sort elements by start time
-                  const sortedElements = [...rowElements].sort(
-                    (a, b) => a.timeFrame.start - b.timeFrame.start
-                  );
+                // Check gaps between elements
+                for (let i = 0; i <= sortedElements.length; i++) {
+                  const currentStart =
+                    i === 0 ? 0 : sortedElements[i - 1].timeFrame.end;
+                  const nextStart =
+                    i === sortedElements.length
+                      ? store.maxTime
+                      : sortedElements[i].timeFrame.start;
 
-                  hasSpace = false; // Reset hasSpace before checking gaps
-
-                  // Check gaps between elements
-                  for (let i = 0; i <= sortedElements.length; i++) {
-                    const currentStart =
-                      i === 0 ? 0 : sortedElements[i - 1].timeFrame.end;
-                    const nextStart =
-                      i === sortedElements.length
-                        ? store.maxTime
-                        : sortedElements[i].timeFrame.start;
-
-                    if (nextStart - currentStart >= 5000) {
-                      // 5 seconds for images
-                      startTime = currentStart;
-                      hasSpace = true;
-                      break;
-                    }
+                  if (nextStart - currentStart >= 5000) {
+                    // 5 seconds for images
+                    startTime = currentStart;
+                    hasSpace = true;
+                    break;
                   }
                 }
+              }
 
-                if (hasSpace) {
-                  // Add to current row
-                  await store.addImageLocal({
-                    url: response.data.url,
-                    minUrl: response.data.minUrl,
-                    row: rowIndex,
-                    startTime: startTime,
-                  });
-                } else {
-                  // Create new row and add element there
-                  store.shiftRowsDown(rowIndex + 1);
-                  await store.addImageLocal({
-                    url: response.data.url,
-                    minUrl: response.data.minUrl,
-                    row: rowIndex + 1,
-                    startTime: 0,
-                  });
-                }
-              } else {
-                // Add to new row if current row is not imageUrl type
+              if (hasSpace) {
+                // Add to current row
                 await store.addImageLocal({
-                  url: response.data.url,
-                  minUrl: response.data.minUrl,
-                  row: store.maxRows,
+                  url: localUrl,
+                  minUrl: localUrl,
+                  row: rowIndex,
+                  startTime: startTime,
+                });
+              } else {
+                // Create new row and add element there
+                store.shiftRowsDown(rowIndex + 1);
+                await store.addImageLocal({
+                  url: localUrl,
+                  minUrl: localUrl,
+                  row: rowIndex + 1,
                   startTime: 0,
                 });
               }
+            } else {
+              // Add to new row if current row is not imageUrl type
+              await store.addImageLocal({
+                url: localUrl,
+                minUrl: localUrl,
+                row: store.maxRows,
+                startTime: 0,
+              });
             }
+
+            // Upload to server in background (don't await)
+            const formData = new FormData();
+            formData.append('image', file);
+            uploadImage(formData).catch(err => {
+              console.warn('Background image upload failed:', err.message);
+            });
           } catch (error) {
-            handleCatchError(error, 'Failed to upload image');
+            handleCatchError(error, 'Failed to add image');
           }
         } else if (file.type.startsWith('video/')) {
+          // Handle video drop
+          try {
+            const localUrl = URL.createObjectURL(file);
+            const duration = await new Promise(resolve => {
+              const video = document.createElement('video');
+              video.preload = 'metadata';
+              video.onloadedmetadata = () => resolve(video.duration * 1000);
+              video.onerror = () => resolve(10000);
+              video.src = localUrl;
+            });
+
+            await store.handleVideoUploadFromUrl({
+              url: localUrl,
+              title: file.name,
+              key: null,
+              duration: duration,
+              row: rowIndex,
+              startTime: 0,
+              isNeedLoader: false,
+            });
+
+            // Upload to AWS in background
+            uploadVideoToAWS(file, () => {}).then(({ url, key }) => {
+              const videoData = {
+                key: key,
+                s3Url: url,
+                title: file.name,
+                length: duration / 1000,
+              };
+              saveVideoData(videoData, store.currentStoryId, user).catch(err => {
+                console.warn('Background video metadata save failed:', err.message);
+              });
+            }).catch(err => {
+              console.warn('Background video upload failed:', err.message);
+            });
+          } catch (error) {
+            handleCatchError(error, 'Failed to add video');
+          }
         }
       }
     };
@@ -1904,77 +1903,8 @@ const TimelineRow = observer(
               if (files && files.length > 0) {
                 const file = files[0];
 
-                if (file.type.startsWith('audio/')) {
-                } else if (file.type.startsWith('image/')) {
-                  try {
-                    const formData = new FormData();
-                    formData.append('image', file);
-
-                    const response = await uploadImage(formData);
-
-                    if (response) {
-                      store.shiftRowsDown(0);
-                      await store.addImageLocal({
-                        url: response.data.url,
-                        minUrl: response.data.minUrl,
-                        row: 0,
-                        startTime: 0,
-                      });
-                    }
-                  } catch (error) {
-                    handleCatchError(error, 'Failed to upload image');
-                  }
-                } else if (file.type.startsWith('video/')) {
-                  try {
-                    // Handle video locally for immediate preview
-                    await store.handleVideoUpload(file);
-
-                    // Get video duration
-                    const duration = await new Promise(resolve => {
-                      const video = document.createElement('video');
-                      video.preload = 'metadata';
-                      video.onloadedmetadata = () => {
-                        resolve(video.duration * 1000); // Convert to milliseconds
-                      };
-                      video.src = URL.createObjectURL(file);
-                    });
-
-                    // Upload to AWS in the background
-                    const { url, key } = await uploadVideoToAWS(
-                      file,
-                      progress => {
-                        // Progress callback for video upload
-                      }
-                    );
-
-                    // Save video metadata
-                    const videoData = {
-                      key: key,
-                      s3Url: url,
-                      title: file.name,
-                      length: duration / 1000, // Convert back to seconds for saveVideoData
-                    };
-
-                    const saved = await saveVideoData(
-                      videoData,
-                      store.currentStoryId,
-                      user
-                    );
-
-                    // Update store with uploaded video
-                    store.handleVideoUploadFromUrl({
-                      url: url,
-                      title: file.name,
-                      key: key,
-                      duration: duration,
-                      row: 0,
-                      startTime: 0,
-                      isNeedLoader: false,
-                    });
-                  } catch (error) {
-                    handleCatchError(error, 'Failed to upload video');
-                  }
-                }
+                store.shiftRowsDown(0);
+                await handleFileDropToTimeline(store, file, 0, 0);
               }
             }}
           >
@@ -2284,76 +2214,9 @@ const TimelineRow = observer(
             const files = e.dataTransfer.files;
             if (files && files.length > 0) {
               const file = files[0];
-
-              if (file.type.startsWith('audio/')) {
-              } else if (file.type.startsWith('image/')) {
-                try {
-                  const formData = new FormData();
-                  formData.append('image', file);
-
-                  const response = await uploadImage(formData);
-
-                  if (response) {
-                    store.shiftRowsDown(rowIndex + 1);
-                    await store.addImageLocal({
-                      url: response.data.url,
-                      minUrl: response.data.minUrl,
-                      row: rowIndex + 1,
-                      startTime: 0,
-                    });
-                  }
-                } catch (error) {
-                  handleCatchError(error, 'Failed to upload image');
-                }
-              } else if (file.type.startsWith('video/')) {
-                try {
-                  // Handle video locally for immediate preview
-                  await store.handleVideoUpload(file);
-
-                  // Get video duration
-                  const duration = await new Promise(resolve => {
-                    const video = document.createElement('video');
-                    video.preload = 'metadata';
-                    video.onloadedmetadata = () => {
-                      resolve(video.duration * 1000); // Convert to milliseconds
-                    };
-                    video.src = URL.createObjectURL(file);
-                  });
-
-                  // Upload to AWS in the background
-                  const { url, key } = await uploadVideoToAWS(
-                    file,
-                    progress => {
-                      // Handle progress if needed
-                    }
-                  );
-
-                  const videoData = {
-                    key: key,
-                    s3Url: url,
-                    title: file.name,
-                    length: duration / 1000, // Convert back to seconds for saveVideoData
-                  };
-
-                  const saved = await saveVideoData(
-                    videoData,
-                    store.currentStoryId,
-                    user
-                  );
-
-                  store.handleVideoUploadFromUrl({
-                    url: url,
-                    title: file.name,
-                    key: key,
-                    duration: duration,
-                    row: rowIndex + 1,
-                    startTime: 0,
-                    isNeedLoader: false,
-                  });
-                } catch (error) {
-                  handleCatchError(error, 'Failed to upload video');
-                }
-              }
+              const targetRow = rowIndex + 1;
+              store.shiftRowsDown(targetRow);
+              await handleFileDropToTimeline(store, file, targetRow, 0);
             }
           }}
         >
