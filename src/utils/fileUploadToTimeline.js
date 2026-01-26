@@ -1,8 +1,6 @@
 import toast from 'react-hot-toast';
+import { analyzeVideoFile } from './videoAudioDetection';
 
-/**
- * Background server sync - upload file to server (non-blocking)
- */
 export const syncFileToServer = (file, fileType) => {
   console.log(`[Server Sync] Would upload ${fileType}: ${file.name}`);
 };
@@ -64,7 +62,7 @@ export const addImageToTimeline = async (store, file, row, startTime = 0) => {
 
 export const addVideoToTimeline = async (store, file, row, startTime = 0) => {
   const videoUrl = URL.createObjectURL(file);
-  const duration = await getVideoDuration(videoUrl);
+  const { hasAudio, duration } = await analyzeVideoFile(videoUrl);
 
   await store.handleVideoUploadFromUrl({
     url: videoUrl,
@@ -76,7 +74,25 @@ export const addVideoToTimeline = async (store, file, row, startTime = 0) => {
     isNeedLoader: false,
   });
 
-  toast.success(`Added ${file.name} to timeline`);
+  if (hasAudio) {
+    const audioRow = row + 1;
+    store.shiftRowsDown(audioRow);
+
+    await store.addExistingAudio({
+      base64Audio: videoUrl,
+      durationMs: duration,
+      row: audioRow,
+      startTime,
+      audioType: 'video-audio',
+      id: generateId('audio-video'),
+      name: `${file.name} (Audio)`,
+    });
+
+    toast.success(`Added video and audio to timeline`);
+  } else {
+    toast.success(`Added ${file.name} to timeline`);
+  }
+
   syncFileToServer(file, 'video');
 };
 
