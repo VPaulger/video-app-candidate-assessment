@@ -11,6 +11,8 @@ import { runInAction } from 'mobx';
 import useUploadProgress from '../../../hooks/useUploadProgress';
 import { validateFile } from '../../../utils/fileValidation';
 import { getAcceptAttribute, formatFileSize } from '../../../utils/fileFormatters';
+import { analyzeVideoFile } from '../../../utils/videoAudioDetection';
+import { handleFileDropToTimeline } from '../../../utils/fileUploadToTimeline';
 import toast from 'react-hot-toast';
 import styles from './TimeLineControlPanel.module.scss';
 
@@ -1110,30 +1112,45 @@ const TimeLineControlPanel = ({
       });
       toast.success(`Added ${file.name} to timeline`);
     } else if (fileType === 'video') {
-      // Get video duration
-      const video = document.createElement('video');
-      const videoDuration = await new Promise((resolve) => {
-        video.addEventListener('loadedmetadata', () => {
-          resolve(video.duration * 1000); // Convert to milliseconds
-        });
-        video.addEventListener('error', () => {
-          resolve(10000); // Default 10 seconds if can't get duration
-        });
-        video.src = uploadedUrl;
-      });
+      try {
+        // Analyze video for audio and duration
+        const { hasAudio, duration: videoDuration } = await analyzeVideoFile(uploadedUrl);
 
-      await store.handleVideoUploadFromUrl({
-        url: uploadedUrl,
-        title: file.name,
-        key: null,
-        duration: videoDuration,
-        row: newRow,
-        startTime: 0,
-        isNeedLoader: false,
-      });
-      toast.success(`Added ${file.name} to timeline`);
+        // Add video to timeline
+        await store.handleVideoUploadFromUrl({
+          url: uploadedUrl,
+          title: file.name,
+          key: null,
+          duration: videoDuration,
+          row: newRow,
+          startTime: 0,
+          isNeedLoader: false,
+        });
+
+        // If video has audio, add audio track on the row below
+        if (hasAudio) {
+          const audioRow = newRow + 1;
+          store.shiftRowsDown(audioRow);
+
+          await store.addExistingAudio({
+            base64Audio: uploadedUrl,
+            durationMs: videoDuration,
+            row: audioRow,
+            startTime: 0,
+            audioType: 'video-audio',
+            id: `audio-video-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            name: `${file.name} (Audio)`,
+          });
+          toast.success(`Added video and audio to timeline`);
+        } else {
+          toast.success(`Added ${file.name} to timeline`);
+        }
+      } catch (error) {
+        console.error('Error adding video to timeline:', error);
+        toast.error(`Failed to add video: ${file.name}`);
+      }
     }
-    
+
     // Refresh elements to ensure proper display
     store.refreshElements();
   };
@@ -1179,51 +1196,40 @@ const TimeLineControlPanel = ({
     setUploadProgress(prev => ({ ...prev, ...initialProgress }));
 
     for (const fileData of newUploadingFiles) {
+      // Use local URL immediately for fast UI response
+      const localUrl = URL.createObjectURL(fileData.file);
+
+      // Add file to timeline immediately with local URL
       try {
-        const formData = new FormData();
-        formData.append('file', fileData.file);
-        formData.append('name', fileData.name);
-        formData.append('type', inferUploadCategory(fileData.file));
-
-        const response = await upload(formData, {
-          onProgress: pct => {
-            setUploadProgress(prev => ({
-              ...prev,
-              [fileData.id]: { progress: Math.max(prev[fileData.id]?.progress || 0, Math.min(100, pct)) },
-            }));
-          },
-        });
-
-        setUploadProgress(prev => ({
-          ...prev,
-          [fileData.id]: { progress: 100 },
-        }));
-
-        // Get uploaded file URL from response
-        let uploadedUrl = null;
-        if (response?.data?.file?.url) {
-          uploadedUrl = response.data.file.url;
-        } else if (response?.data?.url) {
-          uploadedUrl = response.data.url;
-        } else {
-          // Fallback to temporary URL if no uploaded URL available
-          uploadedUrl = URL.createObjectURL(fileData.file);
-        }
-
-        // Add file to timeline after successful upload
-        await addFileToTimeline(fileData.file, uploadedUrl);
-        
+        await addFileToTimeline(fileData.file, localUrl);
       } catch (e) {
-        const canceled = e?.canceled;
-        if (!canceled) {
-          console.error('Upload error:', e);
-          toast.error(`Failed to upload ${fileData.name}`);
-        }
-        setUploadProgress(prev => ({
-          ...prev,
-          [fileData.id]: { progress: 100, error: !canceled },
-        }));
+        console.error('Error adding file to timeline:', e);
+        toast.error(`Failed to add ${fileData.name} to timeline`);
       }
+
+      setUploadProgress(prev => ({
+        ...prev,
+        [fileData.id]: { progress: 100 },
+      }));
+
+      // Upload to server in background (non-blocking)
+      const formData = new FormData();
+      formData.append('file', fileData.file);
+      formData.append('name', fileData.name);
+      formData.append('type', inferUploadCategory(fileData.file));
+
+      upload(formData, {
+        onProgress: pct => {
+          setUploadProgress(prev => ({
+            ...prev,
+            [fileData.id]: { progress: Math.max(prev[fileData.id]?.progress || 0, Math.min(100, pct)) },
+          }));
+        },
+      }).catch(e => {
+        if (!e?.canceled) {
+          console.warn('Background server upload failed:', e.message || e);
+        }
+      });
     }
 
     setIsUploadingFiles(false);
