@@ -77,7 +77,7 @@ const PopupPanel = ({
         left: x,
         top: y,
         transform: 'translate(-50%, -50%)',
-        zIndex: 1000,
+        zIndex: 10000,
       }}
     >
       {isAudioType ? (
