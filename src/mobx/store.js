@@ -12,6 +12,7 @@ import {
   updateTimeToUtil,
   refreshElementsUtil,
 } from './store-modules';
+import { cutTimelineElement } from './store-modules/cutTimeline';
 import { handleCatchError } from '../utils/errorHandler';
 
 export class Store {
@@ -3591,8 +3592,8 @@ export class Store {
       Array.isArray(animation.targetIds) && animation.targetIds.length > 0
         ? animation.targetIds
         : animation.targetId
-        ? [animation.targetId]
-        : [];
+          ? [animation.targetId]
+          : [];
 
     const targetElements = this.editorElements.filter(
       el => targetIds.includes(el.id) && el.type !== 'animation'
@@ -6722,8 +6723,8 @@ export class Store {
           effectDirection === 'in'
             ? 'In'
             : effectDirection === 'out'
-            ? 'Out'
-            : 'Effect'
+              ? 'Out'
+              : 'Effect'
         }`;
       } else if (animation.type.endsWith('In')) {
         displayName = `${capitalizedType} In`;
@@ -9497,8 +9498,9 @@ export class Store {
           if (audioContext) {
             await audioContext.close();
           }
-          audioContext = new (window.AudioContext ||
-            window.webkitAudioContext)();
+          audioContext = new (
+            window.AudioContext || window.webkitAudioContext
+          )();
           const destination = audioContext.createMediaStreamDestination();
           const gainNode = audioContext.createGain();
           gainNode.gain.value = 1.0;
@@ -12382,6 +12384,41 @@ export class Store {
       // Reset initialization state and save final state to history
       this.setInitializationState(false);
     }
+  }
+
+  /**
+   * Cuts a timeline element at the current playhead position
+   * @param {string} elementId - ID of the element to cut
+   */
+  cutElement(elementId) {
+    cutTimelineElement(this, elementId, this.currentTimeInMs);
+  }
+
+  /**
+   * Splits a video element at the specified time point
+   * @param {Object} item - The video element to split
+   * @param {number} splitPoint - Time in milliseconds where to split
+   */
+  splitVideoElement(item, splitPoint) {
+    cutTimelineElement(this, item.id, splitPoint);
+  }
+
+  /**
+   * Splits an audio element at the specified time point
+   * @param {Object} item - The audio element to split
+   * @param {number} splitPoint - Time in milliseconds where to split
+   */
+  splitAudioElement(item, splitPoint) {
+    cutTimelineElement(this, item.id, splitPoint);
+  }
+
+  /**
+   * Splits an image element at the specified time point
+   * @param {Object} item - The image element to split
+   * @param {number} splitPoint - Time in milliseconds where to split
+   */
+  splitImageElement(item, splitPoint) {
+    cutTimelineElement(this, item.id, splitPoint);
   }
 
   async testAvailableCodecs() {

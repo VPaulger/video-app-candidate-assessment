@@ -114,8 +114,9 @@ const drawAudioWaveform = async (
     if (window.audioBufferCache.has(audioUrl)) {
       audioBuffer = window.audioBufferCache.get(audioUrl);
     } else {
-      const audioContext = new (window.AudioContext ||
-        window.webkitAudioContext)();
+      const audioContext = new (
+        window.AudioContext || window.webkitAudioContext
+      )();
       const response = await fetch(audioUrl);
       const arrayBuffer = await response.arrayBuffer();
       audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
@@ -268,7 +269,7 @@ const DraggableElement = ({
         element: element, // Pass the full element for ghost system
         initialClickOffset: initialClickOffset, // Store for later use
       };
-      
+
       return dragItem;
     },
     canDrag: () => true,
@@ -421,8 +422,8 @@ const DraggableElement = ({
             // Remove all animations for this element (like handleNoneClick in TransitionPanel)
             const animationsToRemove = store.animations.filter(
               anim =>
-                (anim.targetId === element.id || 
-                 (anim.targetIds && anim.targetIds.includes(element.id))) && 
+                (anim.targetId === element.id ||
+                  (anim.targetIds && anim.targetIds.includes(element.id))) &&
                 anim.type !== 'glTransition'
             );
             animationsToRemove.forEach(anim => {
@@ -431,9 +432,10 @@ const DraggableElement = ({
 
             // Remove animation elements from timeline
             const animationElements = store.editorElements.filter(
-              el => el.type === 'animation' && 
-                   (el.targetId === element.id || 
-                    (el.targetIds && el.targetIds.includes(element.id)))
+              el =>
+                el.type === 'animation' &&
+                (el.targetId === element.id ||
+                  (el.targetIds && el.targetIds.includes(element.id)))
             );
             animationElements.forEach(animEl => {
               store.removeEditorElement(animEl.id);
@@ -608,10 +610,7 @@ const DraggableElement = ({
       draggable={true}
       style={{
         // Reduce pointer events during gallery/file drag to allow InterRowDropZone to work
-        pointerEvents:
-          store.ghostState.isFileDragging
-            ? 'none'
-            : 'auto',
+        pointerEvents: store.ghostState.isFileDragging ? 'none' : 'auto',
       }}
       onDragStart={() => setIsDragging(true)}
       onDragEnd={() => {
@@ -877,15 +876,15 @@ const TimelineItem = observer(
       ? item.type === 'image' || item.type === 'imageUrl'
         ? styles.selectedImageBackground
         : item.type === 'transition'
-        ? styles.selectedTransitionBackground
-        : styles.selectedBackground
+          ? styles.selectedTransitionBackground
+          : styles.selectedBackground
       : item.type === 'image' || item.type === 'imageUrl'
-      ? styles.unselectedImageBackground
-      : item.type === 'text'
-      ? styles.unselectedTextBackground
-      : item.type === 'transition'
-      ? styles.unselectedTransitionBackground
-      : styles.unselectedBackground;
+        ? styles.unselectedImageBackground
+        : item.type === 'text'
+          ? styles.unselectedTextBackground
+          : item.type === 'transition'
+            ? styles.unselectedTransitionBackground
+            : styles.unselectedBackground;
 
     const handleDirectClick = e => {
       // Skip if this is a context menu event
@@ -908,34 +907,46 @@ const TimelineItem = observer(
 
       e.stopPropagation();
 
-      // Get the draggable element
+      // Calculate cut point based on click position within the element
       const dragableView = e.currentTarget.querySelector(
         `.${styles.dragableView}`
       );
-      const dragableRect = dragableView.getBoundingClientRect();
+      if (!dragableView) return;
 
-      // Calculate click position relative to the dragableView
+      const dragableRect = dragableView.getBoundingClientRect();
       const clickX = e.clientX - dragableRect.left;
       const clickPercentage = clickX / dragableRect.width;
 
-      // Calculate split point based on the element's timeframe
-      const splitPoint =
+      const cutPoint =
         item.timeFrame.start +
         (item.timeFrame.end - item.timeFrame.start) * clickPercentage;
 
-      if (item.type === 'audio') {
-        handleSplitAudio(splitPoint);
-      } else if (item.type === 'imageUrl') {
-        handleSplitImage(splitPoint);
-      } else if (item.type === 'video') {
-        handleSplitVideo(splitPoint);
+      // Check if the cut point is within the item's timeframe
+      if (cutPoint <= item.timeFrame.start || cutPoint >= item.timeFrame.end) {
+        console.warn(
+          `Cut point ${cutPoint} is outside item's timeframe [${item.timeFrame.start}, ${item.timeFrame.end}]`
+        );
+        return;
       }
+
+      if (item.type === 'audio') {
+        handleSplitAudio(cutPoint);
+      } else if (item.type === 'imageUrl' || item.type === 'image') {
+        handleSplitImage(cutPoint);
+      } else if (item.type === 'video') {
+        handleSplitVideo(cutPoint);
+      }
+
+      setIsCutMode(false);
     };
 
     const handleSplitVideo = splitPoint => {
       if (item.type === 'video') {
         store.splitVideoElement(item, splitPoint);
         setIsPopupVisible(false);
+        if (isCutMode) {
+          setIsCutMode(false);
+        }
       }
     };
 
@@ -985,6 +996,9 @@ const TimelineItem = observer(
       if (item.type === 'audio') {
         store.splitAudioElement(item, splitPoint);
         setIsPopupVisible(false);
+        if (isCutMode) {
+          setIsCutMode(false);
+        }
       }
     };
 
@@ -992,6 +1006,9 @@ const TimelineItem = observer(
       if (item.type === 'imageUrl' || item.type === 'image') {
         store.splitImageElement(item, splitPoint);
         setIsPopupVisible(false);
+        if (isCutMode) {
+          setIsCutMode(false);
+        }
       }
     };
 
@@ -1164,7 +1181,11 @@ const TimelineItem = observer(
                       ? '1px solid rgba(255, 255, 255, 0.1019607843)'
                       : 'none',
                 }}
-                onClick={e => e.stopPropagation()}
+                onClick={e => {
+                  if (!isCutMode) {
+                    e.stopPropagation();
+                  }
+                }}
                 onMouseEnter={e => {
                   // Clear any existing hide timeout
                   if (hideTooltipTimeoutRef.current) {
@@ -1913,7 +1934,6 @@ const TimelineItem = observer(
             </>
           )}
         </DraggableElementView>
-
         <div
           className={`${styles.dragableView} ${bgColorOnSelected}`}
           style={{
@@ -1974,7 +1994,6 @@ const TimelineItem = observer(
             )}
           </DraggableElement>
         </div>
-
         <DraggableElementView
           value={item.timeFrame.end}
           total={store.maxTime}
