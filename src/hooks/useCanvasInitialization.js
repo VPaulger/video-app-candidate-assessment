@@ -27,7 +27,7 @@ if (!fabric.VideoImage) {
     _render: function (ctx) {
       try {
         ctx.save();
-        
+
         // Apply custom filter if set
         const customFilter = this.customFilter;
         if (customFilter && customFilter !== 'none' && customFilter !== null && customFilter !== undefined) {
@@ -36,7 +36,7 @@ if (!fabric.VideoImage) {
             ctx.filter = filterCSS;
           }
         }
-        
+
         ctx.drawImage(
           this.videoElement,
           -this.width / 2,
@@ -44,7 +44,7 @@ if (!fabric.VideoImage) {
           this.width,
           this.height
         );
-        
+
         // Reset filter
         if (customFilter && customFilter !== 'none' && customFilter !== null && customFilter !== undefined) {
           const filterCSS = getFilterFromEffectType(customFilter);
@@ -52,7 +52,7 @@ if (!fabric.VideoImage) {
             ctx.filter = 'none';
           }
         }
-        
+
         ctx.restore();
       } catch (err) {
         console.warn('Video render error:', err);
@@ -71,11 +71,11 @@ if (!fabric.VideoImage) {
 // Extend fabric.Image to support customFilter only if not already done
 if (!fabric.Image.prototype._customFilterSupport) {
   const originalImageRender = fabric.Image.prototype._render;
-  
-  fabric.Image.prototype._render = function(ctx) {
+
+  fabric.Image.prototype._render = function (ctx) {
     // Apply custom filter if set
     const customFilter = this.customFilter;
-    
+
     if (customFilter && customFilter !== 'none' && customFilter !== null && customFilter !== undefined) {
       const filterCSS = getFilterFromEffectType(customFilter);
       if (filterCSS && filterCSS !== 'none' && filterCSS !== 'pixi-filter') {
@@ -96,7 +96,7 @@ if (!fabric.Image.prototype._customFilterSupport) {
 
   // Add customFilter property to fabric.Image prototype
   fabric.Image.prototype.customFilter = 'none';
-  
+
   // Mark that custom filter support has been added
   fabric.Image.prototype._customFilterSupport = true;
 }
@@ -204,7 +204,7 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
     const canvasAspectRatio = store.getAspectRatioValue() || (9 / 16);
     const baseWidth = 1080;
     const canvasHeight = Math.round(baseWidth / canvasAspectRatio);
-    
+
     const canvas = new fabric.Canvas('canvas', {
       width: baseWidth,
       height: canvasHeight,
@@ -231,6 +231,8 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
     let isCtrlKeyPressed = false;
     let isDraggingClone = false;
     let originalObject = null;
+    let cachedCanvasRect = null;
+    let updateRequestId = null;
 
     const handleKeyDown = function (e) {
       if (e.key === 'Control' || e.key === 'Meta') {
@@ -258,16 +260,16 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       const canvasElement = canvas.getElement();
       const selectionLayer = document.getElementById('selection-layer');
       const canvasContainer = document.getElementById('grid-canvas-container');
-      
+
       if (!canvasElement) return;
-      
+
       // Check if the click target is within canvas area or related UI
       const isInsideCanvas = canvasElement.contains(e.target) || canvasElement === e.target;
       const isInsideSelectionLayer = selectionLayer && (selectionLayer.contains(e.target) || selectionLayer === e.target);
       const isInsideCanvasContainer = canvasContainer && (canvasContainer.contains(e.target) || canvasContainer === e.target);
       const isControlPoint = e.target.hasAttribute && e.target.hasAttribute('data-control-point');
       const isHandleAction = e.target.hasAttribute && e.target.hasAttribute('data-handle-action');
-      
+
       // If click is outside canvas area and not on control elements, clear selection
       if (!isInsideCanvas && !isInsideSelectionLayer && !isInsideCanvasContainer && !isControlPoint && !isHandleAction) {
         const activeObject = canvas.getActiveObject();
@@ -358,6 +360,9 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
     };
 
     canvas.on('mouse:down', function (options) {
+      // Performance optimization: cache canvas rect and selection container offsets at start of interaction
+      cachedCanvasRect = canvas.getElement().getBoundingClientRect();
+
       if (options.target && isCtrlKeyPressed && !canvas.isDrawingMode) {
         const activeObject = options.target;
         isDraggingClone = true;
@@ -437,7 +442,7 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
     });
 
     guideline.init();
-    
+
     // Store guideline reference for later use
     store.guideline = guideline;
 
@@ -537,7 +542,7 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       }
 
       handleElements = [];
-      
+
       const hoverBox = document.querySelector('[data-testid*="hover-box"]');
       if (hoverBox) {
         hoverBox.style.display = 'none';
@@ -631,7 +636,7 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
 
       store.containerObserver = observer;
 
-      canvas.on('selection:created', function(e) {
+      canvas.on('selection:created', function (e) {
         // Enable controls for video objects when selected
         if (e.selected && e.selected.length > 0) {
           e.selected.forEach(obj => {
@@ -642,10 +647,17 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
               });
             }
           });
+
+          // Sync selection with store
+          const selected = e.selected[0];
+          const editorElement = store.editorElements.find(el => el.fabricObject === selected);
+          if (editorElement) {
+            store.setSelectedElement(editorElement);
+          }
         }
         createCustomSelectionOutline();
       });
-      canvas.on('selection:updated', function(e) {
+      canvas.on('selection:updated', function (e) {
         // Enable controls for video objects when selected
         if (e.selected && e.selected.length > 0) {
           e.selected.forEach(obj => {
@@ -656,6 +668,13 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
               });
             }
           });
+
+          // Sync selection with store
+          const selected = e.selected[0];
+          const editorElement = store.editorElements.find(el => el.fabricObject === selected);
+          if (editorElement) {
+            store.setSelectedElement(editorElement);
+          }
         }
         createCustomSelectionOutline();
       });
@@ -674,13 +693,84 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
           store.clearGuidelines();
         }
       });
+
+      const clampObjectWithinBounds = (obj) => {
+        if (!obj || !obj.canvas) return;
+
+        const canvas = obj.canvas;
+        const canvasWidth = canvas.width;
+        const canvasHeight = canvas.height;
+        const boundingRect = obj.getBoundingRect();
+
+        let modified = false;
+
+        // Horizontal clamping
+        if (boundingRect.left < 0) {
+          obj.left -= boundingRect.left;
+          modified = true;
+        } else if (boundingRect.left + boundingRect.width > canvasWidth) {
+          obj.left -= (boundingRect.left + boundingRect.width - canvasWidth);
+          modified = true;
+        }
+
+        // Vertical clamping
+        if (boundingRect.top < 0) {
+          obj.top -= boundingRect.top;
+          modified = true;
+        } else if (boundingRect.top + boundingRect.height > canvasHeight) {
+          obj.top -= (boundingRect.top + boundingRect.height - canvasHeight);
+          modified = true;
+        }
+
+        if (modified) {
+          obj.setCoords();
+          canvas.requestRenderAll();
+        }
+      };
+
       canvas.on('object:moving', function (e) {
-        if (e.target && selectionLayer) {
-          lastActiveObject = e.target;
-          updateControlPointsPositions(e.target);
+        const obj = e.target;
+        if (obj) {
+          // Boundary clamping
+          clampObjectWithinBounds(obj);
+
+          if (selectionLayer) {
+            lastActiveObject = obj;
+            // Use requestAnimationFrame for smoother performance
+            if (updateRequestId) cancelAnimationFrame(updateRequestId);
+            updateRequestId = requestAnimationFrame(() => {
+              updateControlPointsPositions(obj);
+            });
+          }
         }
       });
-      
+
+      canvas.on('object:scaling', function (e) {
+        const obj = e.target;
+        if (obj) {
+          clampObjectWithinBounds(obj);
+          if (selectionLayer) {
+            if (updateRequestId) cancelAnimationFrame(updateRequestId);
+            updateRequestId = requestAnimationFrame(() => {
+              updateControlPointsPositions(obj);
+            });
+          }
+        }
+      });
+
+      canvas.on('object:rotating', function (e) {
+        const obj = e.target;
+        if (obj) {
+          clampObjectWithinBounds(obj);
+          if (selectionLayer) {
+            if (updateRequestId) cancelAnimationFrame(updateRequestId);
+            updateRequestId = requestAnimationFrame(() => {
+              updateControlPointsPositions(obj);
+            });
+          }
+        }
+      });
+
       canvas.on('object:moved', function (e) {
         // Clear guidelines after moving is complete
         setTimeout(() => {
@@ -689,10 +779,32 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
           }
         }, 100);
       });
-      
+
       canvas.on('object:modified', function (e) {
-        if (e.target && selectionLayer) {
-          createCustomSelectionOutline();
+        const obj = e.target;
+        if (obj) {
+          // Ensure it's clamped after modification (drop)
+          clampObjectWithinBounds(obj);
+
+          if (selectionLayer) {
+            createCustomSelectionOutline();
+          }
+
+          // Sync placement with store
+          const editorElement = store.editorElements.find(
+            el => el.fabricObject === obj
+          );
+          if (editorElement) {
+            store.updateElementPlacement(editorElement.id, {
+              x: obj.left,
+              y: obj.top,
+              scaleX: obj.scaleX,
+              scaleY: obj.scaleY,
+              rotation: obj.angle,
+              width: obj.width * obj.scaleX,
+              height: obj.height * obj.scaleY,
+            });
+          }
         }
         // Clear guidelines after object modification is complete
         setTimeout(() => {
@@ -707,7 +819,7 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
           updateControlPointsPositions(e.target);
         }
       });
-      
+
       canvas.on('object:scaled', function (e) {
         // Clear guidelines after scaling is complete
         setTimeout(() => {
@@ -722,20 +834,9 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
           updateControlPointsPositions(e.target);
         }
       });
-      
+
       canvas.on('object:rotated', function (e) {
         // Clear guidelines after rotation is complete
-        setTimeout(() => {
-          if (!canvas.getActiveObject()) {
-            store.clearGuidelines();
-          }
-        }, 100);
-      });
-      canvas.on('object:modified', function (e) {
-        if (e.target && selectionLayer) {
-          createCustomSelectionOutline();
-        }
-        // Clear guidelines after object modification is complete
         setTimeout(() => {
           if (!canvas.getActiveObject()) {
             store.clearGuidelines();
@@ -751,10 +852,18 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
           createCustomSelectionOutline();
         }
       });
-      canvas.on('mouse:wheel', createCustomSelectionOutline);
+      canvas.on('mouse:wheel', () => {
+        if (updateRequestId) cancelAnimationFrame(updateRequestId);
+        updateRequestId = requestAnimationFrame(() => {
+          createCustomSelectionOutline();
+        });
+      });
       canvas.on('mouse:move', function (e) {
         if (canvas.getActiveObject() && selectionLayer) {
-          updateControlPointsPositions(canvas.getActiveObject());
+          if (updateRequestId) cancelAnimationFrame(updateRequestId);
+          updateRequestId = requestAnimationFrame(() => {
+            updateControlPointsPositions(canvas.getActiveObject());
+          });
         }
       });
     }, 100);
@@ -777,7 +886,8 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       const scaleFactorX = displayWidth / canvas.width;
       const scaleFactorY = displayHeight / canvas.height;
 
-      const canvasRect = canvasEl.getBoundingClientRect();
+      // Use cached canvas rect if available, fall back to measurement if not (e.g. first render)
+      const canvasRect = cachedCanvasRect || canvasEl.getBoundingClientRect();
 
       const oCoords = activeObject.oCoords;
 
@@ -786,43 +896,44 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
           x:
             oCoords.tl.x * scaleFactorX +
             canvasRect.left -
-            store.selectionContainer.offsetLeft,
+            (store.selectionContainer?.offsetLeft || 0),
           y:
             oCoords.tl.y * scaleFactorY +
             canvasRect.top -
-            store.selectionContainer.offsetTop,
+            (store.selectionContainer?.offsetTop || 0),
         },
         tr: {
           x:
             oCoords.tr.x * scaleFactorX +
             canvasRect.left -
-            store.selectionContainer.offsetLeft,
+            (store.selectionContainer?.offsetLeft || 0),
           y:
             oCoords.tr.y * scaleFactorY +
             canvasRect.top -
-            store.selectionContainer.offsetTop,
+            (store.selectionContainer?.offsetTop || 0),
         },
         bl: {
           x:
             oCoords.bl.x * scaleFactorX +
             canvasRect.left -
-            store.selectionContainer.offsetLeft,
+            (store.selectionContainer?.offsetLeft || 0),
           y:
             oCoords.bl.y * scaleFactorY +
             canvasRect.top -
-            store.selectionContainer.offsetTop,
+            (store.selectionContainer?.offsetTop || 0),
         },
         br: {
           x:
             oCoords.br.x * scaleFactorX +
             canvasRect.left -
-            store.selectionContainer.offsetLeft,
+            (store.selectionContainer?.offsetLeft || 0),
           y:
             oCoords.br.y * scaleFactorY +
             canvasRect.top -
-            store.selectionContainer.offsetTop,
+            (store.selectionContainer?.offsetTop || 0),
         },
       };
+
 
       const width = Math.sqrt(
         Math.pow(domCoords.tr.x - domCoords.tl.x, 2) +
@@ -843,8 +954,8 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
         hoverBox.style.position = 'absolute';
         hoverBox.style.pointerEvents = 'none';
         hoverBox.style.zIndex = '1000';
-        
-       const canvasContainer = canvasEl.parentElement;
+
+        const canvasContainer = canvasEl.parentElement;
         if (canvasContainer) {
           canvasContainer.appendChild(hoverBox);
         }
@@ -912,9 +1023,8 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
           handle.style.top = `${point.coords.y}px`;
         });
 
-        const markerSelector = `[data-handle-action="${
-          point.selector.match(/["']([^"']+)["']/)[1]
-        }"]`;
+        const markerSelector = `[data-handle-action="${point.selector.match(/["']([^"']+)["']/)[1]
+          }"]`;
         const markers = selectionLayer.querySelectorAll(markerSelector);
         markers.forEach(marker => {
           marker.style.left = `${point.coords.x}px`;
@@ -1166,13 +1276,13 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
               if (config.proportional) {
                 // For video objects, maintain aspect ratio properly
                 const isVideoObject = activeObject.type === 'videoImage' || activeObject.type === 'CoverVideo';
-                
+
                 let scaleRatio;
                 if (isVideoObject) {
                   // For video, use the dominant direction to maintain aspect ratio
                   const widthChange = Math.abs(offsetX);
                   const heightChange = Math.abs(offsetY);
-                  
+
                   if (widthChange > heightChange) {
                     scaleRatio = Math.max(0.1, newWidth / original.width);
                   } else {

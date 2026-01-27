@@ -224,405 +224,427 @@ const drawAudioWaveform = async (
   }
 };
 
-const DraggableElement = ({
-  element,
-  children,
-  moveElement,
-  onImageDrop,
-  onMouseUp,
-}) => {
-  const [isDragging, setIsDragging] = useState(false);
-  const store = React.useContext(StoreContext);
+const
 
-  const [{ isDragging: dragMonitorState }, dragRef, preview] = useDrag({
-    type: 'timeline-item',
-    item: monitor => {
-      // Get initial click coordinates
-      const initialClientOffset = monitor.getInitialClientOffset();
-      const initialSourceClientOffset = monitor.getInitialSourceClientOffset();
+  DraggableElement = ({
+    element,
+    children,
+    moveElement,
+    onImageDrop,
+    onMouseUp,
+  }) => {
+    const [isDragging, setIsDragging] = useState(false);
+    const store = React.useContext(StoreContext);
 
-      // Calculate initial click offset within the element
-      let initialClickOffset = 0;
-      if (initialClientOffset && initialSourceClientOffset) {
-        initialClickOffset =
-          initialClientOffset.x - initialSourceClientOffset.x;
-      }
+    const [{ isDragging: dragMonitorState }, dragRef, preview] = useDrag({
+      type: 'timeline-item',
+      item: monitor => {
+        // Get initial click coordinates
+        const initialClientOffset = monitor.getInitialClientOffset();
+        const initialSourceClientOffset = monitor.getInitialSourceClientOffset();
 
-      // Check if this element is part of multi-select
-      const isPartOfMultiSelect =
-        store?.selectedElements &&
-        Object.keys(store.selectedElements).length > 1 &&
-        Object.values(store.selectedElements).some(
-          selected => selected.id === element.id
-        );
-
-      // Only start single ghost drag if not part of multi-select
-      if (!isPartOfMultiSelect) {
-        store.startGhostDrag(element, initialClickOffset, 0, 'move');
-      }
-
-      const dragItem = {
-        id: element.id,
-        timeFrame: element.timeFrame,
-        elementType: element.type,
-        element: element, // Pass the full element for ghost system
-        initialClickOffset: initialClickOffset, // Store for later use
-      };
-      
-      return dragItem;
-    },
-    canDrag: () => true,
-    collect: monitor => ({
-      isDragging: monitor.isDragging(),
-    }),
-    end: (item, monitor) => {
-      // Reset ghost state when drag ends
-      store.resetGhostState();
-    },
-  });
-
-  // Set empty drag preview to hide default ghost
-  React.useEffect(() => {
-    preview(new Image(), { captureDraggingState: true });
-  }, [preview]);
-
-  const [{ isOver, canDrop }, drop] = useDrop({
-    accept: [
-      'timeline-item',
-      'gallery-image',
-      'scene-image',
-      'gallery-video',
-      'scene-video',
-      'animation-drop',
-      '__NATIVE_FILE__',
-    ],
-    canDrop: (item, monitor) => {
-      if (!monitor.isOver({ shallow: true })) {
-        return false;
-      }
-
-      if (monitor.getItemType() === '__NATIVE_FILE__') {
-        const files = monitor.getItem().files;
-        if (files && files.length > 0) {
-          const file = files[0];
-          return file.type.startsWith('image/') && element.type === 'imageUrl';
+        // Calculate initial click offset within the element
+        let initialClickOffset = 0;
+        if (initialClientOffset && initialSourceClientOffset) {
+          initialClickOffset =
+            initialClientOffset.x - initialSourceClientOffset.x;
         }
-      }
 
-      // Handle scene-image type
-      if (monitor.getItemType() === 'scene-image') {
-        return element.type === 'imageUrl';
-      }
+        // Check if this element is part of multi-select
+        const isPartOfMultiSelect =
+          store?.selectedElements &&
+          Object.keys(store.selectedElements).length > 1 &&
+          Object.values(store.selectedElements).some(
+            selected => selected.id === element.id
+          );
 
-      // Handle gallery-video and scene-video types
-      if (
-        monitor.getItemType() === 'gallery-video' ||
-        monitor.getItemType() === 'scene-video'
-      ) {
-        return element.type === 'video';
-      }
-
-      // Handle animation drop - allow on images and videos
-      if (monitor.getItemType() === 'animation-drop') {
-        return element.type === 'imageUrl' || element.type === 'video';
-      }
-
-      return item.type === 'gallery-image' && element.type === 'imageUrl';
-    },
-    drop: async (item, monitor) => {
-      if (!monitor.isOver({ shallow: true })) {
-        return;
-      }
-      if (monitor.didDrop()) {
-        return;
-      }
-
-      if (monitor.getItemType() === '__NATIVE_FILE__') {
-        const files = monitor.getItem().files;
-        if (files && files.length > 0) {
-          const file = files[0];
-          if (file.type.startsWith('image/') && element.type === 'imageUrl') {
-            const formData = new FormData();
-            formData.append('image', file);
-            try {
-              const response = await uploadImage(formData);
-              if (response && response.url) {
-                const img = new Image();
-                img.src = response.url;
-                await new Promise(resolve => {
-                  img.onload = () => {
-                    onImageDrop(
-                      {
-                        url: response.url,
-                        imageWidth: img.naturalWidth,
-                        imageHeight: img.naturalHeight,
-                        _id: Date.now().toString(),
-                        prompt: '',
-                        negativePrompt: '',
-                      },
-                      element
-                    );
-                    resolve();
-                  };
-                  img.onerror = resolve;
-                });
-              }
-            } catch (error) {
-              console.error('Error uploading image:', error);
-            }
-          }
+        // Only start single ghost drag if not part of multi-select
+        if (!isPartOfMultiSelect) {
+          store.startGhostDrag(element, initialClickOffset, 0, 'move');
         }
-        return { handled: true };
-      }
 
-      if (monitor.getItemType() === 'gallery-image') {
-        onImageDrop(item.image, element);
-        return { handled: true };
-      }
-
-      if (monitor.getItemType() === 'scene-image') {
-        // Make sure the image data structure matches what onImageDrop expects
-        const sceneImage = item.image;
-
-        // Create a compatible image object structure
-        const imageForTimeline = {
-          _id: sceneImage.id || Date.now().toString(),
-          url: sceneImage.url,
-          minUrl: sceneImage.minUrl,
-          prompt: sceneImage.prompt,
-          negativePrompt: sceneImage.negativePrompt,
-          imageWidth: sceneImage.imageWidth,
-          imageHeight: sceneImage.imageHeight,
+        const dragItem = {
+          id: element.id,
+          timeFrame: element.timeFrame,
+          elementType: element.type,
+          element: element, // Pass the full element for ghost system
+          initialClickOffset: initialClickOffset, // Store for later use
         };
 
-        onImageDrop(imageForTimeline, element);
-        return { handled: true };
-      }
+        return dragItem;
+      },
+      canDrag: () => true,
+      collect: monitor => ({
+        isDragging: monitor.isDragging(),
+      }),
+      end: (item, monitor) => {
+        // Reset ghost state when drag ends
+        store.resetGhostState();
+      },
+    });
 
-      if (
-        monitor.getItemType() === 'gallery-video' ||
-        monitor.getItemType() === 'scene-video'
-      ) {
-        // Handle video drop on existing video element (replace functionality)
-        const videoData = item.video;
+    // Set empty drag preview to hide default ghost
+    React.useEffect(() => {
+      preview(new Image(), { captureDraggingState: true });
+    }, [preview]);
 
-        // For now, we don't support replacing videos, just return handled
-        // In the future, you could implement video replacement logic here
-        return { handled: true };
-      }
+    const [{ isOver, canDrop }, drop] = useDrop({
+      accept: [
+        'timeline-item',
+        'gallery-image',
+        'scene-image',
+        'gallery-video',
+        'scene-video',
+        'animation-drop',
+        '__NATIVE_FILE__',
+      ],
+      canDrop: (item, monitor) => {
+        if (!monitor.isOver({ shallow: true })) {
+          return false;
+        }
 
-      if (monitor.getItemType() === 'animation-drop') {
-        // Handle animation drop on visual element (image or video)
-        const animationData = item.animation;
-
-        if (element.type === 'imageUrl' || element.type === 'video') {
-          // Handle "None" animation - remove existing animations/transitions
-          if (animationData.type === 'none') {
-            // Remove all animations for this element (like handleNoneClick in TransitionPanel)
-            const animationsToRemove = store.animations.filter(
-              anim =>
-                (anim.targetId === element.id || 
-                 (anim.targetIds && anim.targetIds.includes(element.id))) && 
-                anim.type !== 'glTransition'
-            );
-            animationsToRemove.forEach(anim => {
-              store.removeAnimation(anim.id);
-            });
-
-            // Remove animation elements from timeline
-            const animationElements = store.editorElements.filter(
-              el => el.type === 'animation' && 
-                   (el.targetId === element.id || 
-                    (el.targetIds && el.targetIds.includes(element.id)))
-            );
-            animationElements.forEach(animEl => {
-              store.removeEditorElement(animEl.id);
-            });
-
-            // Remove GL transitions related to this element
-            const glTransitions = store.animations.filter(
-              a =>
-                a.type === 'glTransition' &&
-                (a.fromElementId === element.id || a.toElementId === element.id)
-            );
-            glTransitions.forEach(transition => {
-              store.removeGLTransition(transition.id);
-            });
-
-            return { handled: true };
-          }
-
-          // Check if this is a GL transition (like in TransitionPanel)
-          if (animationData.isGLTransition) {
-            // Handle GL transition exactly like handleGLTransitionClick in TransitionPanel
-            const currentElement = element;
-            const currentRow = currentElement.row;
-            const elementsInRow = store.editorElements
-              .filter(el => el.row === currentRow && el.type === 'imageUrl')
-              .sort((a, b) => a.timeFrame.start - b.timeFrame.start);
-
-            const currentIndex = elementsInRow.findIndex(
-              el => el.id === currentElement.id
-            );
-            const nextElement = elementsInRow[currentIndex + 1];
-
-            if (nextElement) {
-              const existingTransition = store.animations.find(
-                a =>
-                  a.type === 'glTransition' &&
-                  a.fromElementId === currentElement.id &&
-                  a.toElementId === nextElement.id
-              );
-
-              if (existingTransition) {
-                // Check if it's the same transition type - if so, just remove it (toggle off)
-                if (existingTransition.transitionType === animationData.type) {
-                  store.removeGLTransition(existingTransition.id);
-                  return { handled: true };
-                } else {
-                  // Different transition type - remove old and add new
-                  store.removeGLTransition(existingTransition.id);
-                }
-              }
-
-              const duration = animationData.duration || 300;
-
-              // Use store.addGLTransition for proper gap positioning (like TransitionPanel does)
-              store
-                .addGLTransition(
-                  currentElement.id,
-                  nextElement.id,
-                  animationData.type,
-                  duration
-                )
-                .then(transitionId => {
-                  if (transitionId) {
-                  }
-                })
-                .catch(error => {
-                  console.error('Error adding GL transition:', error);
-                });
-            } else {
-              console.warn('No next image element found for GL transition');
-            }
-            return { handled: true };
-          }
-
-          // Handle regular animations (not GL transitions)
-          // Use unified type and properties if available (like in TransitionPanel)
-          const actualType = animationData.unifiedType || animationData.type;
-          const actualProperties =
-            animationData.unifiedProperties || animationData.properties || {};
-
-          // Create animation exactly like TransitionPanel does
-          const newAnimation = {
-            id: getUid(),
-            type: actualType,
-            targetId: element.id,
-            duration:
-              actualProperties.duration || animationData.duration || 600,
-            properties: { ...actualProperties },
-            effectVariant: animationData.effectVariant,
-          };
-
-          // Set timing based on position type for unified effects (like in TransitionPanel)
-          if (
-            actualType === 'zoomEffect' ||
-            actualType === 'fadeEffect' ||
-            actualType === 'slideIn' ||
-            actualType === 'slideOut' ||
-            actualType === 'dropIn' ||
-            actualType === 'dropOut'
-          ) {
-            const elementTimeFrame = element.timeFrame;
-            if (elementTimeFrame) {
-              const sceneDuration =
-                elementTimeFrame.end - elementTimeFrame.start;
-
-              if (
-                animationData.effectVariant === 'in' ||
-                actualType === 'slideIn' ||
-                actualType === 'dropIn'
-              ) {
-                // Start at beginning of scene
-                newAnimation.properties.startTime = 0;
-                newAnimation.properties.endTime = newAnimation.duration;
-              } else if (
-                animationData.effectVariant === 'out' ||
-                actualType === 'slideOut' ||
-                actualType === 'dropOut'
-              ) {
-                // End at end of scene
-                newAnimation.properties.startTime =
-                  sceneDuration - newAnimation.duration;
-                newAnimation.properties.endTime = sceneDuration;
-              } else if (animationData.effectVariant === 'effect') {
-                // Custom timing for effects
-                newAnimation.properties.startTime =
-                  newAnimation.properties.startTime || 0;
-                newAnimation.properties.endTime =
-                  newAnimation.properties.endTime || newAnimation.duration;
-              }
-            }
-          }
-
-          // Use store.addAnimation - it will create timeline element automatically
-          if (store) {
-            store.addAnimation(newAnimation);
-
-            // Trigger refresh (already done in store.addAnimation, but ensure it happens)
-            store.scheduleAnimationRefresh();
-
-            // Trigger Redux sync (already done in store.addAnimation, but ensure it happens)
-            if (
-              window.dispatchSaveTimelineState &&
-              !store.isUndoRedoOperation
-            ) {
-              window.dispatchSaveTimelineState(store);
-            }
+        if (monitor.getItemType() === '__NATIVE_FILE__') {
+          const files = monitor.getItem().files;
+          if (files && files.length > 0) {
+            const file = files[0];
+            return file.type.startsWith('image/') && element.type === 'imageUrl';
           }
         }
-        return { handled: true };
-      }
 
-      if (item.id !== element.id) {
-        moveElement(item.id, element.id);
-      }
-    },
-    collect: monitor => ({
-      isOver: monitor.isOver({ shallow: true }),
-      canDrop: monitor.canDrop(),
-    }),
-  });
+        // Handle scene-image type
+        if (monitor.getItemType() === 'scene-image') {
+          return element.type === 'imageUrl';
+        }
 
-  return (
-    <div
-      ref={node => dragRef(drop(node))}
-      className={`${styles.draggableItem} 
-        ${
-          dragMonitorState && !store.ghostState.isDragging
-            ? styles.dragging
-            : ''
-        } 
-        ${isOver && canDrop ? styles.dropHover : ''}`}
-      draggable={true}
-      style={{
-        // Reduce pointer events during gallery/file drag to allow InterRowDropZone to work
-        pointerEvents:
-          store.ghostState.isFileDragging
-            ? 'none'
-            : 'auto',
-      }}
-      onDragStart={() => setIsDragging(true)}
-      onDragEnd={() => {
-        setIsDragging(false);
-        if (onMouseUp) onMouseUp();
-      }}
-    >
-      {children}
-    </div>
-  );
-};
+        // Handle gallery-video and scene-video types
+        if (
+          monitor.getItemType() === 'gallery-video' ||
+          monitor.getItemType() === 'scene-video'
+        ) {
+          return element.type === 'video';
+        }
+
+        // Handle animation drop - allow on images and videos
+        if (monitor.getItemType() === 'animation-drop') {
+          return element.type === 'imageUrl' || element.type === 'video';
+        }
+
+        return item.type === 'gallery-image' && element.type === 'imageUrl';
+      },
+      drop: async (item, monitor) => {
+        if (!monitor.isOver({ shallow: true })) {
+          return;
+        }
+        if (monitor.didDrop()) {
+          return;
+        }
+
+        if (monitor.getItemType() === '__NATIVE_FILE__') {
+          const files = monitor.getItem().files;
+          if (files && files.length > 0) {
+            const file = files[0];
+            if (file.type.startsWith('image/') && element.type === 'imageUrl') {
+              const formData = new FormData();
+              formData.append('image', file);
+              try {
+                const response = await uploadImage(formData);
+                if (response && response.url) {
+                  const img = new Image();
+                  img.src = response.url;
+                  await new Promise(resolve => {
+                    img.onload = () => {
+                      onImageDrop(
+                        {
+                          url: response.url,
+                          imageWidth: img.naturalWidth,
+                          imageHeight: img.naturalHeight,
+                          _id: Date.now().toString(),
+                          prompt: '',
+                          negativePrompt: '',
+                        },
+                        element
+                      );
+                      resolve();
+                    };
+                    img.onerror = resolve;
+                  });
+                }
+              } catch (error) {
+                console.error('Error uploading image:', error);
+              }
+            }
+          }
+          return { handled: true };
+        }
+
+        if (monitor.getItemType() === 'gallery-image') {
+          onImageDrop(item.image, element);
+          return { handled: true };
+        }
+
+        if (monitor.getItemType() === 'scene-image') {
+          // Make sure the image data structure matches what onImageDrop expects
+          const sceneImage = item.image;
+
+          // Create a compatible image object structure
+          const imageForTimeline = {
+            _id: sceneImage.id || Date.now().toString(),
+            url: sceneImage.url,
+            minUrl: sceneImage.minUrl,
+            prompt: sceneImage.prompt,
+            negativePrompt: sceneImage.negativePrompt,
+            imageWidth: sceneImage.imageWidth,
+            imageHeight: sceneImage.imageHeight,
+          };
+
+          onImageDrop(imageForTimeline, element);
+          return { handled: true };
+        }
+
+        if (
+          monitor.getItemType() === 'gallery-video' ||
+          monitor.getItemType() === 'scene-video'
+        ) {
+          // Handle video drop on existing video element (replace functionality)
+          const videoData = item.video;
+
+          // For now, we don't support replacing videos, just return handled
+          // In the future, you could implement video replacement logic here
+          return { handled: true };
+        }
+
+        if (monitor.getItemType() === 'animation-drop') {
+          // Handle animation drop on visual element (image or video)
+          const animationData = item.animation;
+
+          if (element.type === 'imageUrl' || element.type === 'video') {
+            // Handle "None" animation - remove existing animations/transitions
+            if (animationData.type === 'none') {
+              // Remove all animations for this element (like handleNoneClick in TransitionPanel)
+              const animationsToRemove = store.animations.filter(
+                anim =>
+                  (anim.targetId === element.id ||
+                    (anim.targetIds && anim.targetIds.includes(element.id))) &&
+                  anim.type !== 'glTransition'
+              );
+              animationsToRemove.forEach(anim => {
+                store.removeAnimation(anim.id);
+              });
+
+              // Remove animation elements from timeline
+              const animationElements = store.editorElements.filter(
+                el => el.type === 'animation' &&
+                  (el.targetId === element.id ||
+                    (el.targetIds && el.targetIds.includes(element.id)))
+              );
+              animationElements.forEach(animEl => {
+                store.removeEditorElement(animEl.id);
+              });
+
+              // Remove GL transitions related to this element
+              const glTransitions = store.animations.filter(
+                a =>
+                  a.type === 'glTransition' &&
+                  (a.fromElementId === element.id || a.toElementId === element.id)
+              );
+              glTransitions.forEach(transition => {
+                store.removeGLTransition(transition.id);
+              });
+
+              return { handled: true };
+            }
+
+            // Check if this is a GL transition (like in TransitionPanel)
+            if (animationData.isGLTransition) {
+              // Handle GL transition exactly like handleGLTransitionClick in TransitionPanel
+              const currentElement = element;
+              const currentRow = currentElement.row;
+              const elementsInRow = store.editorElements
+                .filter(el => el.row === currentRow && el.type === 'imageUrl')
+                .sort((a, b) => a.timeFrame.start - b.timeFrame.start);
+
+              const currentIndex = elementsInRow.findIndex(
+                el => el.id === currentElement.id
+              );
+              const nextElement = elementsInRow[currentIndex + 1];
+
+              if (nextElement) {
+                const existingTransition = store.animations.find(
+                  a =>
+                    a.type === 'glTransition' &&
+                    a.fromElementId === currentElement.id &&
+                    a.toElementId === nextElement.id
+                );
+
+                if (existingTransition) {
+                  // Check if it's the same transition type - if so, just remove it (toggle off)
+                  if (existingTransition.transitionType === animationData.type) {
+                    store.removeGLTransition(existingTransition.id);
+                    return { handled: true };
+                  } else {
+                    // Different transition type - remove old and add new
+                    store.removeGLTransition(existingTransition.id);
+                  }
+                }
+
+                const duration = animationData.duration || 300;
+
+                // Use store.addGLTransition for proper gap positioning (like TransitionPanel does)
+                store
+                  .addGLTransition(
+                    currentElement.id,
+                    nextElement.id,
+                    animationData.type,
+                    duration
+                  )
+                  .then(transitionId => {
+                    if (transitionId) {
+                    }
+                  })
+                  .catch(error => {
+                    console.error('Error adding GL transition:', error);
+                  });
+              } else {
+                console.warn('No next image element found for GL transition');
+              }
+              return { handled: true };
+            }
+
+            // Handle regular animations (not GL transitions)
+            // Use unified type and properties if available (like in TransitionPanel)
+            const actualType = animationData.unifiedType || animationData.type;
+            const actualProperties =
+              animationData.unifiedProperties || animationData.properties || {};
+
+            // Create animation exactly like TransitionPanel does
+            const newAnimation = {
+              id: getUid(),
+              type: actualType,
+              targetId: element.id,
+              duration:
+                actualProperties.duration || animationData.duration || 600,
+              properties: { ...actualProperties },
+              effectVariant: animationData.effectVariant,
+            };
+
+            // Set timing based on position type for unified effects (like in TransitionPanel)
+            if (
+              actualType === 'zoomEffect' ||
+              actualType === 'fadeEffect' ||
+              actualType === 'slideIn' ||
+              actualType === 'slideOut' ||
+              actualType === 'dropIn' ||
+              actualType === 'dropOut'
+            ) {
+              const elementTimeFrame = element.timeFrame;
+              if (elementTimeFrame) {
+                const sceneDuration =
+                  elementTimeFrame.end - elementTimeFrame.start;
+
+                if (
+                  animationData.effectVariant === 'in' ||
+                  actualType === 'slideIn' ||
+                  actualType === 'dropIn'
+                ) {
+                  // Start at beginning of scene
+                  newAnimation.properties.startTime = 0;
+                  newAnimation.properties.endTime = newAnimation.duration;
+                } else if (
+                  animationData.effectVariant === 'out' ||
+                  actualType === 'slideOut' ||
+                  actualType === 'dropOut'
+                ) {
+                  // End at end of scene
+                  newAnimation.properties.startTime =
+                    sceneDuration - newAnimation.duration;
+                  newAnimation.properties.endTime = sceneDuration;
+                } else if (animationData.effectVariant === 'effect') {
+                  // Custom timing for effects
+                  newAnimation.properties.startTime =
+                    newAnimation.properties.startTime || 0;
+                  newAnimation.properties.endTime =
+                    newAnimation.properties.endTime || newAnimation.duration;
+                }
+              }
+            }
+
+            // Use store.addAnimation - it will create timeline element automatically
+            if (store) {
+              store.addAnimation(newAnimation);
+
+              // Trigger refresh (already done in store.addAnimation, but ensure it happens)
+              store.scheduleAnimationRefresh();
+
+              // Trigger Redux sync (already done in store.addAnimation, but ensure it happens)
+              if (
+                window.dispatchSaveTimelineState &&
+                !store.isUndoRedoOperation
+              ) {
+                window.dispatchSaveTimelineState(store);
+              }
+            }
+          }
+          return { handled: true };
+        }
+
+        if (item.id !== element.id) {
+          moveElement(item.id, element.id);
+        }
+      },
+      collect: monitor => ({
+        isOver: monitor.isOver({ shallow: true }),
+        canDrop: monitor.canDrop(),
+      }),
+    });
+
+    return (
+      <div
+        ref={node => dragRef(drop(node))}
+        className={`${styles.draggableItem} 
+    ${dragMonitorState && !store.ghostState.isDragging ? styles.dragging : ''} 
+    ${isOver && canDrop ? styles.dropHover : ''}`
+        }
+        draggable={true}
+        style={{
+          pointerEvents: store.ghostState.isFileDragging ? 'none' : 'auto',
+          cursor: store.isCutMode ? 'url("/scissors.svg"), crosshair' : 'grab'
+        }}
+        onClick={(e) => {
+          if (store.isCutMode) {
+            e.stopPropagation();
+            e.preventDefault();
+
+            const rect = e.currentTarget.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const percentage = clickX / rect.width;
+            const duration = element.timeFrame.end - element.timeFrame.start;
+            const splitTime = element.timeFrame.start + duration * percentage;
+
+            store.splitElement(element.id, splitTime);
+
+            // Optionally exit cut mode after split? 
+            // Requirement: "Enable cutting a timeline item by clicking the Cut button and then clicking a timeline item."
+            // Usually cut tools stay active. I'll leave it active.
+          } else {
+            // Normal click handling or specific logic if needed
+          }
+        }}
+        onDragStart={(e) => {
+          if (store.isCutMode) {
+            e.preventDefault();
+            return;
+          }
+          setIsDragging(true);
+        }}
+        onDragEnd={() => {
+          setIsDragging(false);
+          if (onMouseUp) onMouseUp();
+        }}
+      >
+        {children}
+      </div>
+    );
+  };
 
 const TimelineItem = observer(
   ({
@@ -877,62 +899,55 @@ const TimelineItem = observer(
       ? item.type === 'image' || item.type === 'imageUrl'
         ? styles.selectedImageBackground
         : item.type === 'transition'
-        ? styles.selectedTransitionBackground
-        : styles.selectedBackground
+          ? styles.selectedTransitionBackground
+          : styles.selectedBackground
       : item.type === 'image' || item.type === 'imageUrl'
-      ? styles.unselectedImageBackground
-      : item.type === 'text'
-      ? styles.unselectedTextBackground
-      : item.type === 'transition'
-      ? styles.unselectedTransitionBackground
-      : styles.unselectedBackground;
+        ? styles.unselectedImageBackground
+        : item.type === 'text'
+          ? styles.unselectedTextBackground
+          : item.type === 'transition'
+            ? styles.unselectedTransitionBackground
+            : styles.unselectedBackground;
 
     const handleDirectClick = e => {
       // Skip if this is a context menu event
       if (e.type === 'contextmenu') {
         return;
       }
-      if (e.button !== defaultButton) {
-        return;
-      }
 
-      if (
-        !isCutMode ||
-        (item.type !== 'imageUrl' &&
-          item.type !== 'audio' &&
-          item.type !== 'video')
-      ) {
+      if (!isCutMode) {
         onSelectItemClick();
         return;
       }
 
       e.stopPropagation();
+      e.preventDefault();
 
-      // Get the draggable element
+      // Get the draggable element or use currentTarget as fallback
+      let targetRect;
       const dragableView = e.currentTarget.querySelector(
         `.${styles.dragableView}`
       );
-      const dragableRect = dragableView.getBoundingClientRect();
 
-      // Calculate click position relative to the dragableView
-      const clickX = e.clientX - dragableRect.left;
-      const clickPercentage = clickX / dragableRect.width;
+      if (dragableView) {
+        targetRect = dragableView.getBoundingClientRect();
+      } else {
+        targetRect = e.currentTarget.getBoundingClientRect();
+      }
+
+      // Calculate click position relative to the element
+      const clickX = e.clientX - targetRect.left;
+      const clickPercentage = Math.max(0, Math.min(1, clickX / targetRect.width));
 
       // Calculate split point based on the element's timeframe
-      const splitPoint =
-        item.timeFrame.start +
-        (item.timeFrame.end - item.timeFrame.start) * clickPercentage;
+      const duration = item.timeFrame.end - item.timeFrame.start;
+      const splitPoint = item.timeFrame.start + duration * clickPercentage;
 
-      if (item.type === 'audio') {
-        handleSplitAudio(splitPoint);
-      } else if (item.type === 'imageUrl') {
-        handleSplitImage(splitPoint);
-      } else if (item.type === 'video') {
-        handleSplitVideo(splitPoint);
-      }
+      store.splitElement(item.id, splitPoint);
     };
 
     const handleSplitVideo = splitPoint => {
+      console.log('SPLIT POINT', splitPoint);
       if (item.type === 'video') {
         store.splitVideoElement(item, splitPoint);
         setIsPopupVisible(false);
@@ -1069,9 +1084,8 @@ const TimelineItem = observer(
         case 'audio':
           return (
             <div
-              className={`${styles.audioElement} ${styles.itemLabel} ${
-                item.isLoading ? styles.loadingAudio : ''
-              }`}
+              className={`${styles.audioElement} ${styles.itemLabel} ${item.isLoading ? styles.loadingAudio : ''
+                }`}
               data-timeline-item
               data-overlay-id={item.id}
             >
@@ -1095,9 +1109,8 @@ const TimelineItem = observer(
         case 'video':
           return (
             <div
-              className={`${styles.videoElement} ${styles.itemLabel} ${
-                item.isLoading ? styles.loadingVideo : ''
-              }`}
+              className={`${styles.videoElement} ${styles.itemLabel} ${item.isLoading ? styles.loadingVideo : ''
+                }`}
               data-timeline-item
               data-overlay-id={item.id}
             >
@@ -1127,9 +1140,8 @@ const TimelineItem = observer(
                         alt=""
                         className={styles.thumbnail}
                         style={{
-                          width: `${
-                            100 / (item.properties?.thumbnails?.length || 1)
-                          }%`,
+                          width: `${100 / (item.properties?.thumbnails?.length || 1)
+                            }%`,
                         }}
                       />
                     );
@@ -1149,12 +1161,11 @@ const TimelineItem = observer(
               <div
                 className={styles.imageContainer}
                 style={{
-                  backgroundImage: `url(${
-                    item.properties?.minUrl || item.properties?.src || ''
-                  })`,
+                  backgroundImage: `url(${item.properties?.minUrl || item.properties?.src || ''
+                    })`,
                   backgroundSize:
                     (item.properties?.width || 0) <
-                    (item.properties?.height || 0)
+                      (item.properties?.height || 0)
                       ? rowHeight / 1.5
                       : rowHeight / 1.5,
                   backgroundPosition: 'start',
@@ -1845,13 +1856,20 @@ const TimelineItem = observer(
       item.subType === 'subtitles';
     const hasWordOverlap = item.type === 'audio' && overlappingWord;
 
+
+    useEffect(() => {
+      console.log('CUT MODE in TimelineItem:', isCutMode, item.id);
+    }, [isCutMode]);
+
+
     return (
       <div
-        onMouseUp={handleDirectClick}
+        // onMouseDown={handleDirectClick}
+        // onClickCapture={handleDirectClick}
+
         key={item.id}
-        className={`${styles.frameView} ${
-          isSelected ? styles.selectedItem : ''
-        } 
+        className={`${styles.frameView} ${isSelected ? styles.selectedItem : ''
+          } 
           timeline-item ${isCutMode ? styles.cutMode : ''} 
           ${isHighlighted ? styles.subtitleHighlight : ''}
           ${isSwapTarget ? styles.subtitleHighlight : ''}`}
@@ -1894,7 +1912,7 @@ const TimelineItem = observer(
 
             store.endMove();
           }}
-          onMouseDown={() => {}}
+          onMouseDown={() => { }}
           elementType={item.type}
           data-timeline-item
           onChange={value => {
@@ -1915,12 +1933,15 @@ const TimelineItem = observer(
         </DraggableElementView>
 
         <div
+
+          onMouseDown={handleDirectClick}
+          onClickCapture={handleDirectClick}
+
           className={`${styles.dragableView} ${bgColorOnSelected}`}
           style={{
-            width: `${
-              ((item.timeFrame.end - item.timeFrame.start) / store.maxTime) *
+            width: `${((item.timeFrame.end - item.timeFrame.start) / store.maxTime) *
               100
-            }%`,
+              }%`,
             left: `${(item.timeFrame.start / store.maxTime) * 100}%`,
             top: 0,
             bottom: 0,
@@ -2010,7 +2031,7 @@ const TimelineItem = observer(
 
             store.endMove();
           }}
-          onMouseDown={() => {}}
+          onMouseDown={() => { }}
           onChange={value => {
             // When resize-ghost is active, DraggableElementView drives the ghost; skip real edits
             if (store.ghostState?.isResizing) return;

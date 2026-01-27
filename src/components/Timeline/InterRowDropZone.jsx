@@ -4,7 +4,7 @@ import styles from './Timeline.module.scss';
 import { StoreContext } from '../../mobx';
 import { uploadImage } from '../../utils/uploadImage';
 import { getUid } from 'utils';
-
+// import moveElementToInterRowDropZone from '../../utils/moveElementToInterRowDropZone';
 const InterRowDropZone = ({
   rowIndex,
   position = 'bottom', // 'top' or 'bottom'

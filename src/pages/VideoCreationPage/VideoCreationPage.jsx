@@ -121,7 +121,7 @@ function VideoCreationPage() {
   const storyData = story;
 
   const isLoading = false;
-  const refetch = () => {};
+  const refetch = () => { };
 
   const scenes = useSelector(state => state.scene.scenes);
 
@@ -199,7 +199,7 @@ function VideoCreationPage() {
           'storyboard',
         ])
       );
-    } catch (error) {}
+    } catch (error) { }
   };
 
   // Derived states from activePanels
@@ -654,8 +654,8 @@ function VideoCreationPage() {
       enabled: !storyData?.isBlank, // Disable for blank projects
       createPlaceholders: !storyData?.isBlank, // Disable placeholder creation for blank projects
       runOnce: true, // Run sync only once
-      onSyncStart: reason => {},
-      onSyncComplete: reason => {},
+      onSyncStart: reason => { },
+      onSyncComplete: reason => { },
     }
   );
 
@@ -935,7 +935,7 @@ function VideoCreationPage() {
 
   // Add event listener for scene undo/redo (Storyboard)
   useEffect(() => {
-    const handleSceneUndoRedo = () => {};
+    const handleSceneUndoRedo = () => { };
     window.addEventListener('sceneUndoRedo', handleSceneUndoRedo);
     return () =>
       window.removeEventListener('sceneUndoRedo', handleSceneUndoRedo);
@@ -1159,13 +1159,13 @@ function VideoCreationPage() {
           JSON.stringify(
             newState
               ? [
-                  ...activeScreens.filter(item => item !== 'storyboard'),
-                  'storyboard',
-                ]
+                ...activeScreens.filter(item => item !== 'storyboard'),
+                'storyboard',
+              ]
               : activeScreens.filter(item => item !== 'storyboard')
           )
         );
-      } catch (error) {}
+      } catch (error) { }
     } else if (name === 'chat') {
       // Special handling for chat
       setIsChatOpen(prevState => {
@@ -1226,7 +1226,7 @@ function VideoCreationPage() {
 
       setPromptsStatuses([]);
       setIsImagesLoading(false);
-    } catch (error) {}
+    } catch (error) { }
   };
   const deleteGeneration = async sceneId => {
     try {
@@ -1236,7 +1236,7 @@ function VideoCreationPage() {
         promptsStatuses.filter(prompt => prompt.pointId !== sceneId)
       );
       setIsImagesLoading(false);
-    } catch (error) {}
+    } catch (error) { }
   };
 
   const [gallerySearchText, setGallerySearchText] = useState('');
@@ -1384,8 +1384,8 @@ function VideoCreationPage() {
         // Also track volume changes in audio elements
         audioElementsVolumes: store.selectedElements
           ? Object.values(store.selectedElements)
-              .filter(element => element?.type === 'audio')
-              .map(element => element.properties?.volume ?? 1)
+            .filter(element => element?.type === 'audio')
+            .map(element => element.properties?.volume ?? 1)
           : [],
       }),
       ({ selectedElements, selectedElementsValues }) => {
@@ -1543,10 +1543,9 @@ function VideoCreationPage() {
       if (volumeRangeRef.current) {
         volumeRangeRef.current.style.setProperty(
           '--range-progress',
-          `${
-            selectedElement?.type === 'audio'
-              ? displayedVolume / 2
-              : previousVolume
+          `${selectedElement?.type === 'audio'
+            ? displayedVolume / 2
+            : previousVolume
           }%`
         );
       }
@@ -1915,6 +1914,8 @@ function VideoCreationPage() {
 
       // Debounce canvas updates to reduce flickering
       canvasResizeTimeoutRef.current = setTimeout(() => {
+        if (!videoPanelRef.current) return; // Add safety check inside timeout
+
         // Calculate available height by subtracting timeline height from viewport height
         const availableHeight = window.innerHeight - timelineHeight - 100;
 
@@ -2697,9 +2698,8 @@ function VideoCreationPage() {
     const handleResize = () => {
       const timelineRnd = document.querySelector('.timeline-rnd');
       if (timelineRnd) {
-        timelineRnd.style.transform = `translate(0px, ${
-          window.innerHeight - timelineHeight
-        }px)`;
+        timelineRnd.style.transform = `translate(0px, ${window.innerHeight - timelineHeight
+          }px)`;
       }
     };
 
@@ -3006,9 +3006,8 @@ function VideoCreationPage() {
           </div>
         )}
         <div
-          className={`${styles.header_navigate_btnset} ${
-            isHideNames ? styles.hideNames : ''
-          }`}
+          className={`${styles.header_navigate_btnset} ${isHideNames ? styles.hideNames : ''
+            }`}
           data-interactive={true}
         >
           {headerNavigateBtns.map(i => (
@@ -3020,9 +3019,8 @@ function VideoCreationPage() {
             >
               {i.name === 'size' ? (
                 <button
-                  className={`${styles.header_navigate_btn} ${
-                    isSizeDropdownOpen ? styles.active : ''
-                  }`}
+                  className={`${styles.header_navigate_btn} ${isSizeDropdownOpen ? styles.active : ''
+                    }`}
                   onClick={() => handleClick(i.name)}
                   style={{
                     color: isSizeDropdownOpen
@@ -3054,24 +3052,20 @@ function VideoCreationPage() {
                     i.name === 'lyra'
                       ? handleLyraClick
                       : i.name === 'download'
-                      ? handleDownloadClick
-                      : () => handleClick(i.name)
+                        ? handleDownloadClick
+                        : () => handleClick(i.name)
                   }
-                  classNameButton={`${styles.header_navigate_btn} ${
-                    i.name !== 'download' && activeScreens.includes(i.name)
+                  classNameButton={`${styles.header_navigate_btn} ${i.name !== 'download' && activeScreens.includes(i.name)
                       ? styles.active
                       : ''
-                  } ${
-                    i.name === 'myItems' && !isHideNames
+                    } ${i.name === 'myItems' && !isHideNames
                       ? styles.myItemsBtn
                       : ''
-                  } ${
-                    i.name === 'storyboard' && !isHideNames
+                    } ${i.name === 'storyboard' && !isHideNames
                       ? styles.storyboardBtn
                       : ''
-                  } ${i.name === 'settings' ? styles.settingsBtn : ''} ${
-                    i.name === 'lyra' ? styles.lyraBtn : ''
-                  }`}
+                    } ${i.name === 'settings' ? styles.settingsBtn : ''} ${i.name === 'lyra' ? styles.lyraBtn : ''
+                    }`}
                   color={
                     i.name !== 'download' && activeScreens.includes(i.name)
                       ? 'var(--accent-color)'
@@ -3143,11 +3137,10 @@ function VideoCreationPage() {
           <div className={styles.main_content} ref={mainContentRef}>
             <div className={styles.content} data-interactive={true}>
               <div
-                className={`${styles.content_box} ${
-                  !isStoryBoardOpen && screen === 'playback'
+                className={`${styles.content_box} ${!isStoryBoardOpen && screen === 'playback'
                     ? styles.centered
                     : ''
-                }`}
+                  }`}
               >
                 {isLoading ? (
                   <div className={styles.skeleton_container}>
@@ -3267,8 +3260,8 @@ function VideoCreationPage() {
                   store?.isInitializationInProgress
                     ? 'Loading timeline....'
                     : isInitializing.current && !isInitialized
-                    ? 'Loading story data....'
-                    : 'Loading timeline....'
+                      ? 'Loading story data....'
+                      : 'Loading timeline....'
                 }
               />
             </Rnd>

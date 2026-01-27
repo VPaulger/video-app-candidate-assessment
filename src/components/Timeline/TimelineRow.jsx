@@ -21,8 +21,8 @@ import { uploadImage } from '../../utils/uploadImage';
 import { ButtonWithIcon } from 'components/reusableComponents/ButtonWithIcon';
 import { getUid } from 'utils';
 import { uploadVideoToAWS } from '../../utils/awsUpload';
-import { saveVideoData } from '../../utils/saveVideoMetadata';
 import { user as selectUser } from '../../redux/auth/selectors';
+import { handleCatchError } from '../../utils/errorHandler';
 import { Resizable } from 'react-resizable';
 
 // Helper function to check if element types are compatible for mixing on same row
@@ -361,15 +361,15 @@ const TimelineRow = observer(
 
         const selectedElements =
           store?.selectedElements &&
-          Object.keys(store.selectedElements).length > 0
+            Object.keys(store.selectedElements).length > 0
             ? Object.values(store.selectedElements)
-                .filter(selected => selected && selected.id)
-                .map(selected =>
-                  store.editorElements.find(
-                    element => element.id === selected.id
-                  )
+              .filter(selected => selected && selected.id)
+              .map(selected =>
+                store.editorElements.find(
+                  element => element.id === selected.id
                 )
-                .filter(Boolean)
+              )
+              .filter(Boolean)
             : [];
 
         const draggedElementIsSelected = selectedElements.some(
@@ -401,9 +401,9 @@ const TimelineRow = observer(
             Math.min(
               store.maxTime,
               store.ghostState.initialElementStarts[
-                store.ghostState.selectedElements.findIndex(
-                  el => el.id === draggedElement.id
-                )
+              store.ghostState.selectedElements.findIndex(
+                el => el.id === draggedElement.id
+              )
               ] + deltaTime
             )
           );
@@ -443,7 +443,7 @@ const TimelineRow = observer(
               initialClientOffset.x -
               hoverBoundingRect.left -
               (draggedElement.timeFrame.start / store.maxTime) *
-                hoverBoundingRect.width,
+              hoverBoundingRect.width,
           };
         }
 
@@ -562,7 +562,7 @@ const TimelineRow = observer(
                 Math.min(
                   store.maxTime,
                   store.ghostState.initialElementStarts[draggedIndex] +
-                    deltaTime
+                  deltaTime
                 )
               );
 
@@ -1676,13 +1676,11 @@ const TimelineRow = observer(
 
       return (
         <div
-          className={`${styles.rowDragHandle} ${
-            store.ghostState.dragOverRowIndex === rowIndex
-              ? styles.dragOver
-              : ''
-          } ${
-            store.ghostState.draggedRowIndex === rowIndex ? styles.dragging : ''
-          }`}
+          className={`${styles.rowDragHandle} ${store.ghostState.dragOverRowIndex === rowIndex
+            ? styles.dragOver
+            : ''
+            } ${store.ghostState.draggedRowIndex === rowIndex ? styles.dragging : ''
+            }`}
           data-row-drag-handle
           onMouseDown={e => {
             if (!hasElements) return;
@@ -2013,13 +2011,12 @@ const TimelineRow = observer(
               drop(node);
               dropRef.current = node;
             }}
-            className={`${styles.timelineRow} ${
-              (isOver && canDrop) ||
+            className={`${styles.timelineRow} ${(isOver && canDrop) ||
               (isDraggingFile &&
                 (!rowType || areTypesCompatible(rowType, overlays[0]?.type)))
-                ? styles.rowHover
-                : ''
-            }`}
+              ? styles.rowHover
+              : ''
+              }`}
             data-testid="timeline-row"
             data-timeline-row={rowId}
             style={{
