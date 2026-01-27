@@ -92,6 +92,10 @@ export class Store {
     this.isRefreshingAnimations = false;
     this.isRefreshingElements = false;
     this.ANIMATION_BATCH_DELAY = 16; // ~1 frame at 60fps
+    this.selectedCanvasItemId = null;
+    this.isDraggingCanvasItem = false;
+    this.canvasDragState = null;
+
 
     this.dragState = {
       isDragging: false,
@@ -1080,6 +1084,79 @@ export class Store {
     this.isRecording = false;
   }
 
+  selectCanvasItem(id){
+    this.selectedCanvasItemId = id;
+  }
+  
+  startCanvasDrag(elementId, mouseX, mouseY) {
+    const el = this.editorElements.find(e => e.id === elementId);
+    if (!el) return;
+  
+    const canvas = el.canvas ?? { x: 0.5, y: 0.5 };
+  
+    this.isDraggingCanvasItem = true;
+    this.canvasDragState = {
+      elementId,
+      startMouseX: mouseX,
+      startMouseY: mouseY,
+      startX: canvas.x,
+      startY: canvas.y,
+    };
+  }
+  updateCanvasDrag(mouseX, mouseY, canvasWidth, canvasHeight) {
+    if (!this.isDraggingCanvasItem || !this.canvasDragState) return;
+  
+    const {
+      elementId,
+      startMouseX,
+      startMouseY,
+      startX,
+      startY,
+    } = this.canvasDragState;
+  
+    const dx = (mouseX - startMouseX) / canvasWidth;
+    const dy = (mouseY - startMouseY) / canvasHeight;
+  
+    const index = this.editorElements.findIndex(e => e.id === elementId);
+    if (index === -1) return;
+  
+    const el = this.editorElements[index];
+  
+    this.editorElements[index] = {
+      ...el,
+      canvas: {
+        ...(el.canvas ?? {}),
+        x: startX + dx,
+        y: startY + dy,
+      },
+    };
+  }
+  
+  endCanvasDrag() {
+    if (!this.canvasDragState) return;
+  
+    const { elementId } = this.canvasDragState;
+    const index = this.editorElements.findIndex(e => e.id === elementId);
+  
+    if (index !== -1) {
+      const el = this.editorElements[index];
+      const c = el.canvas ?? { x: 0.5, y: 0.5 };
+  
+      this.editorElements[index] = {
+        ...el,
+        canvas: {
+          ...c,
+          x: Math.min(1, Math.max(0, c.x)),
+          y: Math.min(1, Math.max(0, c.y)),
+        },
+      };
+    }
+  
+    this.isDraggingCanvasItem = false;
+    this.canvasDragState = null;
+  
+    this.saveToHistory?.();
+  }
   refreshAnimations() {
     refreshAnimationsUtil(this);
   }
@@ -4895,6 +4972,7 @@ export class Store {
             hasBorders: true,
             type: 'video',
           });
+          fabricVideo.elementId = videoId;
           this.canvas.add(fabricVideo);
 
           // Force canvas to render and ensure video is visible
@@ -4951,6 +5029,7 @@ export class Store {
             hasBorders: true, // Enable borders for video
             type: 'video',
           });
+          fabricVideo.elementId = videoId;
 
           this.canvas.add(fabricVideo);
 
@@ -5263,6 +5342,7 @@ export class Store {
               });
 
               // Add fabric object reference
+              imageObject.elementId = id
               newElement.fabricObject = imageObject;
 
               // Update elements in a single batch
@@ -5789,6 +5869,7 @@ export class Store {
                   };
 
                   // Add new fabricObject to canvas
+                 
                   this.canvas.add(img);
 
                   // Direct update without removing/adding
@@ -6063,6 +6144,7 @@ export class Store {
             type: 'video',
           });
 
+          fabricVideo.elementId = id;
           // Create editor element
           const editorElement = {
             id: id,
