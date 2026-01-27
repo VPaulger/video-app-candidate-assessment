@@ -1,8 +1,7 @@
 .error-notification {
   position: fixed;
-  top: 85px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 20px;
+  right: 20px;
   width: 422px;
   min-height: 58px;
   background: rgba(8, 24, 35, 0.4);
@@ -12,8 +11,8 @@
 
   align-items: center;
   border-radius: 10px;
-  z-index: 1000;
-  animation: slideInDown 0.3s ease-out;
+  z-index: 10000;
+  animation: slideInRight 0.3s ease-out;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   transition: all 0.3s ease;
   padding: 9px 0;
@@ -115,31 +114,31 @@
   }
 }
 
-// Анімації
-@keyframes slideInDown {
+// Animations
+@keyframes slideInRight {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(-100%);
+    transform: translateX(100%);
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateX(0);
   }
 }
 
-@keyframes slideOutUp {
+@keyframes slideOutRight {
   from {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateX(0);
   }
   to {
     opacity: 0;
-    transform: translateX(-50%) translateY(-100%);
+    transform: translateX(100%);
   }
 }
 
 .error-notification--closing {
-  animation: slideOutUp 0.3s ease-in forwards;
+  animation: slideOutRight 0.3s ease-in forwards;
   pointer-events: none;
 }
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useDrop, useDrag } from 'react-dnd';
+import { useDrop } from 'react-dnd';
 import { useDispatch } from 'react-redux';
 import { ButtonWithIcon } from 'components/reusableComponents/ButtonWithIcon';
 import ReusablePopup from '../ReusablePopup';
@@ -8,9 +8,8 @@ import PopupPortal from '../PopupPortal/PopupPortal';
 import { removeSilence } from '../../../services/audioApi';
 import { StoreContext } from '../../../mobx';
 import { runInAction } from 'mobx';
-import useUploadProgress from '../../../hooks/useUploadProgress';
 import { validateFile } from '../../../utils/fileValidation';
-import { getAcceptAttribute, formatFileSize } from '../../../utils/fileFormatters';
+import { getAcceptAttribute } from '../../../utils/fileFormatters';
 import toast from 'react-hot-toast';
 import styles from './TimeLineControlPanel.module.scss';
 
@@ -103,11 +102,9 @@ const TimeLineControlPanel = ({
     y: 0,
   });
   const [selectedAudioForSilence, setSelectedAudioForSilence] = useState(null);
-  const [uploadProgress, setUploadProgress] = useState({});
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
 
   const dispatch = useDispatch();
-  const { upload, cancel, isUploading } = useUploadProgress();
   const timelineControlsOptionsRef = useRef(null);
   const volumeContainerRef = useRef(null);
   const volumeNumberRef = useRef(null);
@@ -1148,13 +1145,13 @@ const TimeLineControlPanel = ({
     const rejected = [];
     for (const f of list) {
       const res = validateFile(f, 'All');
-      if (res.ok) accepted.push(f); 
+      if (res.ok) accepted.push(f);
       else rejected.push({ file: f, reason: res.reason });
     }
 
     if (rejected.length) {
-      const head = rejected.slice(0,3).map(r=>`${r.file.name} — ${r.reason}`).join(', ');
-      toast.error(`Some files were rejected: ${head}${rejected.length>3?'…':''}`);
+      const head = rejected.slice(0,3).map(r=>`${r.file.name} - ${r.reason}`).join(', ');
+      toast.error(`Some files were rejected: ${head}${rejected.length>3?'...':''}`);
     }
 
     if (!accepted.length) {
@@ -1162,75 +1159,25 @@ const TimeLineControlPanel = ({
       return;
     }
 
-    const newUploadingFiles = accepted.map(file => ({
-      id: Date.now() + Math.random().toString(36).substring(2, 9),
-      file,
-      name: file.name,
-      progress: 0,
-      size: formatFileSize(file.size),
-      type: getFileType(file),
-      error: false,
-    }));
-
-    const initialProgress = {};
-    newUploadingFiles.forEach(fileData => {
-      initialProgress[fileData.id] = { progress: 0 };
-    });
-    setUploadProgress(prev => ({ ...prev, ...initialProgress }));
-
-    for (const fileData of newUploadingFiles) {
+    // Process files using local blob URLs (no server upload required)
+    for (const file of accepted) {
       try {
-        const formData = new FormData();
-        formData.append('file', fileData.file);
-        formData.append('name', fileData.name);
-        formData.append('type', inferUploadCategory(fileData.file));
+        toast.loading(`Processing ${file.name}...`, { id: `upload-${file.name}` });
 
-        const response = await upload(formData, {
-          onProgress: pct => {
-            setUploadProgress(prev => ({
-              ...prev,
-              [fileData.id]: { progress: Math.max(prev[fileData.id]?.progress || 0, Math.min(100, pct)) },
-            }));
-          },
-        });
+        // Create local blob URL
+        const blobUrl = URL.createObjectURL(file);
 
-        setUploadProgress(prev => ({
-          ...prev,
-          [fileData.id]: { progress: 100 },
-        }));
+        // Add file to timeline
+        await addFileToTimeline(file, blobUrl);
 
-        // Get uploaded file URL from response
-        let uploadedUrl = null;
-        if (response?.data?.file?.url) {
-          uploadedUrl = response.data.file.url;
-        } else if (response?.data?.url) {
-          uploadedUrl = response.data.url;
-        } else {
-          // Fallback to temporary URL if no uploaded URL available
-          uploadedUrl = URL.createObjectURL(fileData.file);
-        }
-
-        // Add file to timeline after successful upload
-        await addFileToTimeline(fileData.file, uploadedUrl);
-        
+        toast.success(`Added ${file.name} to timeline`, { id: `upload-${file.name}` });
       } catch (e) {
-        const canceled = e?.canceled;
-        if (!canceled) {
-          console.error('Upload error:', e);
-          toast.error(`Failed to upload ${fileData.name}`);
-        }
-        setUploadProgress(prev => ({
-          ...prev,
-          [fileData.id]: { progress: 100, error: !canceled },
-        }));
+        console.error('Error processing file:', e);
+        toast.error(`Failed to add ${file.name}`, { id: `upload-${file.name}` });
       }
     }
 
     setIsUploadingFiles(false);
-    // Clear progress after upload
-    setTimeout(() => {
-      setUploadProgress({});
-    }, 2000);
   };
 
   const handleUploadClick = () => {
@@ -1609,17 +1556,17 @@ const TimeLineControlPanel = ({
           size="16"
           accentColor="#FFFFFFB2"
           activeColor="white"
-          color={isUploadingFiles || isUploading ? 'var(--accent-color)' : '#FFFFFF66'}
+          color={isUploadingFiles ? 'var(--accent-color)' : '#FFFFFF66'}
           classNameButton={`${styles.uploadBtn} ${
-            isUploadingFiles || isUploading ? styles.uploading : ''
+            isUploadingFiles ? styles.uploading : ''
           }`}
           onClick={handleUploadClick}
           tooltipText={
-            isUploadingFiles || isUploading 
-              ? 'Uploading files...' 
+            isUploadingFiles
+              ? 'Processing files...'
               : 'Upload files to timeline'
           }
-          disabled={isUploadingFiles || isUploading}
+          disabled={isUploadingFiles}
         />
         {checkedStates.some(state => state) && (
           <div className={styles.dividerContainer}>

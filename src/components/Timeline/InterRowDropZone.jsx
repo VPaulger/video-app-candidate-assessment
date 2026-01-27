@@ -4,6 +4,7 @@ import styles from './Timeline.module.scss';
 import { StoreContext } from '../../mobx';
 import { uploadImage } from '../../utils/uploadImage';
 import { getUid } from 'utils';
+import { useError } from '../../contexts/ErrorContext';
 
 const InterRowDropZone = ({
   rowIndex,
@@ -11,6 +12,7 @@ const InterRowDropZone = ({
 }) => {
   const store = useContext(StoreContext);
   const dragDropManager = useDragDropManager();
+  const { showInfoNeutral, showDonePositive, showError } = useError();
 
   // Track if there's an active drag operation
   const [isDragActive, setIsDragActive] = useState(false);
@@ -497,14 +499,20 @@ const InterRowDropZone = ({
         }
 
         // Fallback to old logic
+        showInfoNeutral('Adding video to timeline...', item.video.title || 'Video');
         store.shiftRowsDown(targetRow);
-        await store.handleVideoUploadFromUrl({
-          url: item.video.url,
-          title: item.video.title || 'Video',
-          key: item.video.key || null,
-          duration: item.video.duration || null,
-          row: targetRow,
-        });
+        try {
+          await store.handleVideoUploadFromUrl({
+            url: item.video.url,
+            title: item.video.title || 'Video',
+            key: item.video.key || null,
+            duration: item.video.duration || null,
+            row: targetRow,
+          });
+          showDonePositive('Video added to timeline');
+        } catch (error) {
+          showError('Failed to add video', error.message);
+        }
         return;
       }
 

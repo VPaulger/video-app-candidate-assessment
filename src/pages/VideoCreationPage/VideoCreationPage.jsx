@@ -2697,9 +2697,8 @@ function VideoCreationPage() {
     const handleResize = () => {
       const timelineRnd = document.querySelector('.timeline-rnd');
       if (timelineRnd) {
-        timelineRnd.style.transform = `translate(0px, ${
-          window.innerHeight - timelineHeight
-        }px)`;
+        // Timeline is now anchored to bottom via CSS, just ensure position is 0
+        timelineRnd.style.transform = `translate(0px, 0px)`;
       }
     };
 
@@ -2720,6 +2719,27 @@ function VideoCreationPage() {
       lyraChatRef.current.style.bottom = `${timelineHeight + 20}px`;
     }
   }, [timelineHeight]);
+
+  // Dynamically adjust timeline height based on number of rows
+  const maxRows = store?.maxRows || 2;
+  const elementsCount = store?.editorElements?.length || 0;
+
+  useEffect(() => {
+    const ROW_HEIGHT = 44;
+    const CONTROLS_HEIGHT = 70;
+    const MIN_HEIGHT = 120;
+    const MAX_HEIGHT = Math.floor(window.innerHeight * 0.5);
+
+    const calculatedHeight = CONTROLS_HEIGHT + maxRows * ROW_HEIGHT;
+    const newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, calculatedHeight));
+
+    setTimelineHeight(prevHeight => {
+      if (prevHeight !== newHeight) {
+        return newHeight;
+      }
+      return prevHeight;
+    });
+  }, [maxRows, elementsCount]);
 
   const [isLyraVisible, setIsLyraVisible] = useState(false);
 
@@ -3169,9 +3189,14 @@ function VideoCreationPage() {
                     style={{
                       position: screen === 'playback' ? 'fixed' : 'relative',
                       top: screen === 'playback' ? '80px' : '-5000px',
-                      left: screen === 'playback' ? '62%' : '-5000px',
+                      bottom: screen === 'playback' ? `${timelineHeight + 5}px` : 'auto',
+                      left: screen === 'playback' ? '50%' : '-5000px',
                       transform:
                         screen === 'playback' ? 'translateX(-50%)' : 'none',
+                      maxHeight: screen === 'playback' ? `calc(100vh - ${timelineHeight + 85}px)` : 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                     }}
                   >
                     <VideoPanel
@@ -3208,22 +3233,26 @@ function VideoCreationPage() {
               position: 'fixed',
               left: 0,
               right: 0,
+              bottom: 0,
               width: '100%',
+              height: `${timelineHeight}px`,
+              overflow: 'visible',
             }}
           >
             <Rnd
               className="timeline-rnd"
               default={{
                 x: 0,
-                y: window.innerHeight - timelineHeight,
+                y: 0,
                 width: '100%',
                 height: timelineHeight,
               }}
-              minHeight={74}
-              maxHeight={320}
+              size={{ width: '100%', height: timelineHeight }}
+              minHeight={120}
+              maxHeight={Math.floor(window.innerHeight * 0.5)}
               enableResizing={{ top: true }}
               disableDragging={true}
-              bounds="window"
+              bounds="parent"
               onResize={(e, direction, ref, delta, position) => {
                 const newHeight = ref.offsetHeight;
                 setTimelineHeight(newHeight);
@@ -3232,8 +3261,14 @@ function VideoCreationPage() {
                 if (containerRef.current) {
                   containerRef.current.style.paddingBottom = `${newHeight}px`;
                 }
+
+                // Update the parent fixed container height
+                const parentContainer = ref.parentElement;
+                if (parentContainer) {
+                  parentContainer.style.height = `${newHeight}px`;
+                }
               }}
-              position={{ x: 0, y: window.innerHeight - timelineHeight }}
+              position={{ x: 0, y: 0 }}
               resizeHandleClasses={{
                 top: styles.resizeHandle,
               }}

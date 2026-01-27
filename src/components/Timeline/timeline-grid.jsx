@@ -32,41 +32,53 @@ const TimelineGrid = observer(
 
     const rows = Array.from({ length: store.maxRows });
 
-    const getAudioDuration = file => {
-      return new Promise((resolve, reject) => {
-        const audio = new Audio();
-        audio.preload = 'metadata';
+    // State for tracking upload errors
+    const [uploadError, setUploadError] = useState(null);
 
-        const audioUrl = URL.createObjectURL(file);
-        audio.src = audioUrl;
+    /**
+     * Check if a file type is supported for timeline upload
+     * @param {File} file - The file to check
+     * @returns {boolean} - True if file type is supported
+     */
+    const isFileTypeSupported = file => {
+      if (!file || !file.type) return false;
+      const type = file.type.toLowerCase();
+      return (
+        type.startsWith('image/') ||
+        type.startsWith('video/') ||
+        type.startsWith('audio/')
+      );
+    };
 
-        audio.onloadedmetadata = () => {
-          URL.revokeObjectURL(audioUrl);
-          resolve(audio.duration);
-        };
-
-        audio.onerror = () => {
-          URL.revokeObjectURL(audioUrl);
-          reject(new Error('Audio file upload error'));
-        };
-
-        setTimeout(() => {
-          if (!audio.duration) {
-            URL.revokeObjectURL(audioUrl);
-            reject(new Error('Audio duration determination timeout'));
-          }
-        }, 5000);
-      });
+    /**
+     * Get the media category from a file
+     * @param {File} file - The file to check
+     * @returns {string|null} - 'image', 'video', 'audio', or null
+     */
+    const getFileCategory = file => {
+      if (!file || !file.type) return null;
+      const type = file.type.toLowerCase();
+      if (type.startsWith('image/')) return 'image';
+      if (type.startsWith('video/')) return 'video';
+      if (type.startsWith('audio/')) return 'audio';
+      return null;
     };
 
     const handleDragOver = e => {
       e.preventDefault();
 
-      if (
-        e.dataTransfer?.items?.[0]?.kind === 'file' &&
-        e.dataTransfer.items[0].type.startsWith('audio/')
-      ) {
-        setIsDraggingOver(true);
+      // Check if any dragged item is a supported media file
+      if (e.dataTransfer?.items?.[0]?.kind === 'file') {
+        const item = e.dataTransfer.items[0];
+        const type = item.type.toLowerCase();
+        if (
+          type.startsWith('image/') ||
+          type.startsWith('video/') ||
+          type.startsWith('audio/')
+        ) {
+          setIsDraggingOver(true);
+          e.dataTransfer.dropEffect = 'copy';
+        }
       }
     };
 
@@ -75,51 +87,72 @@ const TimelineGrid = observer(
       setIsDraggingOver(false);
     };
 
+    /**
+     * Handle file drop on the timeline
+     * Supports image, video, and audio files
+     * For video files, creates both video clip and audio clip (aligned)
+     */
     const handleDrop = async e => {
       e.preventDefault();
       setIsDraggingOver(false);
+      setUploadError(null);
 
-      const files = Array.from(e.dataTransfer.files || []).filter(file =>
-        file.type.startsWith('audio/')
-      );
+      // Filter for supported media files
+      const allFiles = Array.from(e.dataTransfer.files || []);
+      const supportedFiles = allFiles.filter(isFileTypeSupported);
+      const unsupportedFiles = allFiles.filter(f => !isFileTypeSupported(f));
 
-      if (!files.length) return;
+      // Show error for unsupported files
+      if (unsupportedFiles.length > 0) {
+        const unsupportedNames = unsupportedFiles.map(f => f.name).join(', ');
+        const errorMsg = `Unsupported file type(s): ${unsupportedNames}. Supported types: images (JPEG, PNG, WebP, GIF), videos (MP4, WebM, MOV), audio (MP3, WAV, OGG, AAC).`;
+        setUploadError(errorMsg);
+        console.warn(errorMsg);
+
+        // Clear error after 5 seconds
+        setTimeout(() => setUploadError(null), 5000);
+      }
+
+      if (!supportedFiles.length) return;
 
       try {
         const gridRect = gridRef.current.getBoundingClientRect();
         const dropPositionX = (e.clientX - gridRect.left) / gridRect.width;
-        const timePosition = store.maxTime * dropPositionX;
+        const timePosition = Math.max(0, store.maxTime * dropPositionX);
 
-        const allElements = store.editorElements;
+        // Process each file
+        for (const file of supportedFiles) {
+          const category = getFileCategory(file);
 
-        const findTargetRow = () => {
-          const voiceoverElements = allElements.filter(
-            el => el.type === 'audio' && el.audioType === 'voiceover'
+          // Use the store's addMediaFileToTimeline method
+          const result = await store.addMediaFileToTimeline(
+            file,
+            timePosition,
+            null // Let the store find the best row
           );
 
-          if (voiceoverElements.length > 0) {
-            const voiceoverRows = new Set(voiceoverElements.map(el => el.row));
-            return Math.max(...Array.from(voiceoverRows)) + 1;
+          if (!result.success) {
+            setUploadError(result.error || `Failed to add ${file.name} to timeline`);
+            console.error('Failed to add file to timeline:', result.error);
+
+            // Clear error after 5 seconds
+            setTimeout(() => setUploadError(null), 5000);
+          } else {
+            // Log success for debugging
+            const elementsAdded = result.elements?.length || 0;
+            console.log(
+              `Successfully added ${file.name} to timeline (${elementsAdded} element(s)${
+                category === 'video' && result.hasAudio ? ', with audio track' : ''
+              })`
+            );
           }
-
-          const usedRows =
-            allElements.length > 0
-              ? new Set(allElements.map(el => el.row))
-              : new Set();
-
-          return usedRows.size > 0 ? Math.max(...Array.from(usedRows)) + 1 : 0;
-        };
-
-        let targetRow = findTargetRow();
-
-        while (allElements.some(el => el.row === targetRow)) {
-          targetRow++;
-        }
-
-        for (const file of files) {
         }
       } catch (error) {
         console.error('Drag and drop processing error:', error);
+        setUploadError(error.message || 'An error occurred while processing the dropped files');
+
+        // Clear error after 5 seconds
+        setTimeout(() => setUploadError(null), 5000);
       }
     };
 
@@ -425,6 +458,63 @@ const TimelineGrid = observer(
 
         {/* Ghost Marker for hover preview */}
         <GhostMarker position={store.ghostState.ghostMarkerPosition} />
+
+        {/* Drag Over Overlay - shows when dragging media files over the timeline */}
+        {isDraggingOver && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(74, 144, 226, 0.15)',
+              border: '2px dashed #4A90E2',
+              borderRadius: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+              zIndex: 1000,
+            }}
+          >
+            <div
+              style={{
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                color: '#fff',
+                padding: '12px 24px',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: 500,
+              }}
+            >
+              Drop media files here (images, videos, or audio)
+            </div>
+          </div>
+        )}
+
+        {/* Upload Error Display */}
+        {uploadError && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '10px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              backgroundColor: 'rgba(220, 53, 69, 0.95)',
+              color: '#fff',
+              padding: '10px 20px',
+              borderRadius: '6px',
+              fontSize: '13px',
+              maxWidth: '80%',
+              textAlign: 'center',
+              zIndex: 1001,
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+            }}
+          >
+            {uploadError}
+          </div>
+        )}
       </div>
     );
   }

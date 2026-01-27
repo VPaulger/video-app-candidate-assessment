@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { observer } from 'mobx-react';
 import styles from './Timeline.module.scss';
 
@@ -14,8 +14,16 @@ const TimelineGhostElement = observer(
     const [rowPosition, setRowPosition] = useState(null);
     const [overlayMetrics, setOverlayMetrics] = useState(null);
     const [isReady, setIsReady] = useState(false);
+    const cachedRowRef = useRef(row);
 
+    // Only recalculate row position when row changes, not on every left/width update
     useEffect(() => {
+      // Skip if row hasn't changed and we already have metrics
+      if (cachedRowRef.current === row && isReady && rowPosition && overlayMetrics) {
+        return;
+      }
+      cachedRowRef.current = row;
+
       const updateRowPosition = () => {
         // Find the actual timeline row element
         const timelineRow = document.querySelector(
@@ -77,56 +85,63 @@ const TimelineGhostElement = observer(
           resizeObserver.disconnect();
         };
       }
-    }, [row, left, width]); // Also update when ghost position changes
-
-    // Don't render until we have proper positioning data
-    if (!isReady) {
-      return null;
-    }
+    }, [row]); // Only re-run when row changes
 
     // Fallback to percentage calculation if real position not available
     const fallbackRowHeight = 100 / totalRows;
     const fallbackTop = row * fallbackRowHeight;
 
-    // Calculate pixel-perfect left/width based on overlays container metrics
-    let style;
-    if (rowPosition && overlayMetrics) {
-      // Small compensating offset to visually match item borders/handles
-      const compensation = 60; // px
-      const pixelLeft =
-        overlayMetrics.leftBase +
-        (left / 100) * overlayMetrics.widthPx +
-        compensation;
-      const pixelWidth = Math.max(1, (width / 100) * overlayMetrics.widthPx);
-      style = {
-        left: `${pixelLeft}px`,
-        width: `${pixelWidth}px`,
-        top: `${rowPosition.top}px`,
-        height: `${rowPosition.height}px`,
-        position: 'absolute',
-        zIndex: 1000,
-        pointerEvents: 'none',
-      };
-    } else if (rowPosition) {
-      style = {
-        left: `${left}%`,
-        width: `${Math.max(width, 1)}%`,
-        top: `${rowPosition.top}px`,
-        height: `${rowPosition.height}px`,
-        position: 'absolute',
-        zIndex: 1000,
-        pointerEvents: 'none',
-      };
-    } else {
-      style = {
-        left: `${left}%`,
-        width: `${Math.max(width, 1)}%`,
-        top: `${fallbackTop}%`,
-        height: `${fallbackRowHeight}%`,
-        position: 'absolute',
-        zIndex: 1000,
-        pointerEvents: 'none',
-      };
+    // Memoize style calculation to avoid re-creating object on every render
+    // Must be called before any early returns to follow Rules of Hooks
+    const style = useMemo(() => {
+      // Calculate pixel-perfect left/width based on overlays container metrics
+      if (rowPosition && overlayMetrics) {
+        // Small compensating offset to visually match item borders/handles
+        const compensation = 60; // px
+        const pixelLeft =
+          overlayMetrics.leftBase +
+          (left / 100) * overlayMetrics.widthPx +
+          compensation;
+        const pixelWidth = Math.max(1, (width / 100) * overlayMetrics.widthPx);
+        return {
+          transform: `translate3d(${pixelLeft}px, ${rowPosition.top}px, 0)`,
+          width: `${pixelWidth}px`,
+          height: `${rowPosition.height}px`,
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          zIndex: 1000,
+          pointerEvents: 'none',
+          willChange: 'transform',
+        };
+      } else if (rowPosition) {
+        return {
+          left: `${left}%`,
+          width: `${Math.max(width, 1)}%`,
+          top: `${rowPosition.top}px`,
+          height: `${rowPosition.height}px`,
+          position: 'absolute',
+          zIndex: 1000,
+          pointerEvents: 'none',
+          willChange: 'left, width',
+        };
+      } else {
+        return {
+          left: `${left}%`,
+          width: `${Math.max(width, 1)}%`,
+          top: `${fallbackTop}%`,
+          height: `${fallbackRowHeight}%`,
+          position: 'absolute',
+          zIndex: 1000,
+          pointerEvents: 'none',
+          willChange: 'left, width',
+        };
+      }
+    }, [left, width, rowPosition, overlayMetrics, fallbackTop, fallbackRowHeight]);
+
+    // Don't render until we have proper positioning data
+    if (!isReady) {
+      return null;
     }
 
     return (

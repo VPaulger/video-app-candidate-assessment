@@ -234,7 +234,6 @@ const Timeline = ({
   return (
     <div
       className={styles.timelineGridWrapper}
-      style={{ height: 'calc(100% - 50px)' }}
     >
       <TimelineGrid
         overlays={overlays}

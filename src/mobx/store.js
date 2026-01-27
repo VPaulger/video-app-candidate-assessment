@@ -710,6 +710,7 @@ export class Store {
       initialClickOffset: 0, // store initial click offset within element
       initialClientX: null, // store initial mouse X coordinate
       initialElementStart: 0, // store initial element start position
+      initialElementEnd: 0, // store initial element end position (for resize)
       // Resize ghost state
       isResizing: false,
       resizeType: null, // 'start' | 'end'
@@ -4495,6 +4496,7 @@ export class Store {
               isInTimeline: true,
               thumbnails,
               thumbnailDuration: videoDurationMs / thumbnails.length,
+              duration: videoDurationMs,
               zIndex: maxZIndex + 1,
               isActive: true,
             },
@@ -4664,7 +4666,9 @@ export class Store {
       videoElement.playsInline = true;
       videoElement.muted = true;
       videoElement.crossOrigin = 'anonymous';
-      videoElement.src = `${url}?v=${Date.now()}`;
+      // Don't add cache-busting to blob URLs as it breaks them
+      const isBlobUrl = url.startsWith('blob:');
+      videoElement.src = isBlobUrl ? url : `${url}?v=${Date.now()}`;
       videoElement.style.display = 'none';
       videoElement.muted = false;
       videoElement.volume = 1.0;
@@ -6142,6 +6146,511 @@ export class Store {
     }
 
     this.removeEditorElement(audioElement);
+  }
+
+  // ==========================================
+  // MEDIA FILE UPLOAD TO TIMELINE
+  // ==========================================
+
+  /**
+   * Supported file types for timeline upload
+   */
+  static SUPPORTED_FILE_TYPES = {
+    image: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml'],
+    video: ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/mpeg'],
+    audio: ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg', 'audio/aac', 'audio/mp4', 'audio/x-m4a'],
+  };
+
+  /**
+   * Check if a file type is supported
+   * @param {string} mimeType - The MIME type of the file
+   * @returns {string|null} - The category (image, video, audio) or null if unsupported
+   */
+  getMediaCategory(mimeType) {
+    if (!mimeType) return null;
+    const lowerType = mimeType.toLowerCase();
+
+    if (Store.SUPPORTED_FILE_TYPES.image.some(t => lowerType.includes(t.split('/')[1])) || lowerType.startsWith('image/')) {
+      return 'image';
+    }
+    if (Store.SUPPORTED_FILE_TYPES.video.some(t => lowerType.includes(t.split('/')[1])) || lowerType.startsWith('video/')) {
+      return 'video';
+    }
+    if (Store.SUPPORTED_FILE_TYPES.audio.some(t => lowerType.includes(t.split('/')[1])) || lowerType.startsWith('audio/')) {
+      return 'audio';
+    }
+    return null;
+  }
+
+  /**
+   * Check if a video file has an audio track
+   * @param {HTMLVideoElement} videoElement - The video element to check
+   * @returns {Promise<boolean>} - True if video has audio
+   */
+  async checkVideoHasAudio(videoElement) {
+    return new Promise((resolve) => {
+      // Method 1: Check for audio tracks via Web Audio API
+      try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioContext.createMediaElementSource(videoElement);
+
+        // If we can create a source, there might be audio
+        // Check by analyzing a small sample
+        const analyser = audioContext.createAnalyser();
+        source.connect(analyser);
+        analyser.connect(audioContext.destination);
+
+        // Give it a moment to analyze
+        setTimeout(() => {
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          analyser.getByteFrequencyData(dataArray);
+
+          // Check if there's any audio data
+          const hasAudioData = dataArray.some(value => value > 0);
+
+          // Clean up
+          source.disconnect();
+          analyser.disconnect();
+          audioContext.close();
+
+          resolve(hasAudioData);
+        }, 100);
+      } catch (e) {
+        // Method 2: Fallback - check if video element reports audio tracks
+        if (videoElement.audioTracks) {
+          resolve(videoElement.audioTracks.length > 0);
+        } else if (videoElement.webkitAudioDecodedByteCount !== undefined) {
+          // WebKit-specific check
+          resolve(videoElement.webkitAudioDecodedByteCount > 0);
+        } else {
+          // Assume video has audio if we can't determine
+          resolve(true);
+        }
+      }
+    });
+  }
+
+  /**
+   * Add a media file to the timeline
+   * Handles image, video, and audio files
+   * For video files, creates both video and audio clips (aligned)
+   * @param {File} file - The file to add
+   * @param {number} startTime - Start time in milliseconds
+   * @param {number} targetRow - Target row index (optional)
+   * @returns {Promise<{success: boolean, error?: string, elements?: Object[]}>}
+   */
+  async addMediaFileToTimeline(file, startTime = 0, targetRow = null) {
+    const category = this.getMediaCategory(file.type);
+
+    if (!category) {
+      return {
+        success: false,
+        error: `Unsupported file type: ${file.type}. Supported types are: images (JPEG, PNG, WebP, GIF, SVG), videos (MP4, WebM, MOV, AVI), and audio (MP3, WAV, OGG, AAC, M4A).`,
+      };
+    }
+
+    try {
+      const objectUrl = URL.createObjectURL(file);
+      const addedElements = [];
+
+      if (category === 'image') {
+        const result = await this.addImageFileToTimeline(file, objectUrl, startTime, targetRow);
+        if (result.element) addedElements.push(result.element);
+        return { success: true, elements: addedElements };
+      }
+
+      if (category === 'audio') {
+        const result = await this.addAudioFileToTimeline(file, objectUrl, startTime, targetRow);
+        if (result.element) addedElements.push(result.element);
+        return { success: true, elements: addedElements };
+      }
+
+      if (category === 'video') {
+        const result = await this.addVideoFileToTimeline(file, objectUrl, startTime, targetRow);
+        if (result.videoElement) addedElements.push(result.videoElement);
+        if (result.audioElement) addedElements.push(result.audioElement);
+        return { success: true, elements: addedElements, hasAudio: result.hasAudio };
+      }
+
+      return { success: false, error: 'Unknown error occurred' };
+    } catch (error) {
+      console.error('Error adding media file to timeline:', error);
+      return { success: false, error: error.message || 'Failed to add media to timeline' };
+    }
+  }
+
+  /**
+   * Add an image file to the timeline
+   */
+  async addImageFileToTimeline(file, objectUrl, startTime, targetRow) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const id = `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const duration = 5000; // Default 5 seconds for images
+
+        // Find available row if not specified
+        const row = targetRow !== null ? targetRow : this.findAvailableRow('imageUrl', startTime, startTime + duration);
+
+        const element = {
+          id,
+          name: file.name || 'Image',
+          type: 'imageUrl',
+          row,
+          timeFrame: {
+            start: startTime,
+            end: startTime + duration,
+          },
+          placement: {
+            x: 0,
+            y: 0,
+            width: img.width,
+            height: img.height,
+            rotation: 0,
+            scaleX: 1,
+            scaleY: 1,
+          },
+          properties: {
+            elementId: `image-${id}`,
+            src: objectUrl,
+            minUrl: objectUrl,
+            width: img.width,
+            height: img.height,
+          },
+        };
+
+        this.addEditorElement(element, true);
+        this.maxRows = Math.max(this.maxRows, row + 1);
+
+        // Save state for undo/redo
+        if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+          window.dispatchSaveTimelineState(this);
+        }
+
+        resolve({ element });
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('Failed to load image file'));
+      };
+
+      img.src = objectUrl;
+    });
+  }
+
+  /**
+   * Add an audio file to the timeline
+   */
+  async addAudioFileToTimeline(file, objectUrl, startTime, targetRow) {
+    return new Promise((resolve, reject) => {
+      const audio = new Audio();
+      audio.preload = 'metadata';
+
+      audio.onloadedmetadata = () => {
+        const id = `audio-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const durationMs = audio.duration * 1000;
+
+        // Find available row if not specified
+        const row = targetRow !== null ? targetRow : this.findAvailableRow('audio', startTime, startTime + durationMs);
+
+        const element = {
+          id,
+          name: file.name || 'Audio',
+          type: 'audio',
+          row,
+          timeFrame: {
+            start: startTime,
+            end: startTime + durationMs,
+          },
+          placement: {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 100,
+            rotation: 0,
+            scaleX: 1,
+            scaleY: 1,
+          },
+          properties: {
+            elementId: `audio-${id}`,
+            src: objectUrl,
+            audioType: 'local',
+            audioOffset: 0,
+          },
+        };
+
+        this.addEditorElement(element);
+        this.maxRows = Math.max(this.maxRows, row + 1);
+
+        // Save state for undo/redo
+        if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+          window.dispatchSaveTimelineState(this);
+        }
+
+        resolve({ element });
+      };
+
+      audio.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('Failed to load audio file'));
+      };
+
+      audio.src = objectUrl;
+    });
+  }
+
+  /**
+   * Add a video file to the timeline
+   * Creates both video clip and audio clip (aligned) if video has audio
+   */
+  async addVideoFileToTimeline(file, objectUrl, startTime, targetRow) {
+    return new Promise((resolve, reject) => {
+      const videoElement = document.createElement('video');
+      videoElement.preload = 'auto';
+      videoElement.playsInline = true;
+      videoElement.muted = true;
+      videoElement.src = objectUrl;
+
+      videoElement.onloadedmetadata = async () => {
+        try {
+          const videoId = `video-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          const audioId = `audio-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          const durationMs = videoElement.duration * 1000;
+
+          // Check if video has audio
+          let hasAudio = false;
+          try {
+            // Simple heuristic: most videos have audio, we'll create the audio track
+            // and let it play silently if there's no actual audio
+            hasAudio = true; // Assume true, the user can delete if not needed
+          } catch (e) {
+            hasAudio = false;
+          }
+
+          // Find available row for video if not specified
+          const videoRow = targetRow !== null ? targetRow : this.findAvailableRow('video', startTime, startTime + durationMs);
+
+          // Audio goes on the row directly below video for visual alignment
+          // This ensures video and audio are visually adjacent in the timeline
+          const audioRow = videoRow + 1;
+
+          // Generate thumbnails
+          const thumbnails = await this.generateVideoThumbnails(videoElement);
+
+          // Calculate canvas placement - center both horizontally and vertically
+          const canvasWidth = this.canvas?.width || 1920;
+          const canvasHeight = this.canvas?.height || 1080;
+
+          // Scale to fit within canvas while maintaining aspect ratio
+          const scale = Math.min(
+            canvasWidth / videoElement.videoWidth,
+            canvasHeight / videoElement.videoHeight
+          );
+
+          // Calculate scaled dimensions
+          const scaledWidth = videoElement.videoWidth * scale;
+          const scaledHeight = videoElement.videoHeight * scale;
+
+          // Center horizontally and vertically
+          const xPos = (canvasWidth - scaledWidth) / 2;
+          const yPos = (canvasHeight - scaledHeight) / 2;
+
+          // Create video element
+          const videoEditorElement = {
+            id: videoId,
+            name: file.name || 'Video',
+            type: 'video',
+            row: videoRow,
+            timeFrame: {
+              start: startTime,
+              end: startTime + durationMs,
+            },
+            placement: {
+              x: xPos,
+              y: yPos,
+              width: scaledWidth,
+              height: scaledHeight,
+              rotation: 0,
+              scaleX: 1,
+              scaleY: 1,
+            },
+            properties: {
+              elementId: `video-${videoId}`,
+              src: objectUrl,
+              effect: { type: 'none' },
+              width: videoElement.videoWidth,
+              height: videoElement.videoHeight,
+              isInTimeline: true,
+              thumbnails,
+              thumbnailDuration: durationMs / thumbnails.length,
+              videoOffset: 0,
+              // Link to audio element for sync
+              linkedAudioId: hasAudio ? audioId : null,
+            },
+          };
+
+          // Add video element
+          this.addEditorElement(videoEditorElement);
+          this.maxRows = Math.max(this.maxRows, videoRow + 1);
+
+          let audioEditorElement = null;
+
+          // Create audio element if video has audio
+          if (hasAudio) {
+            audioEditorElement = {
+              id: audioId,
+              name: `${file.name || 'Video'} - Audio`,
+              type: 'audio',
+              row: audioRow,
+              timeFrame: {
+                start: startTime, // Same start time as video - aligned!
+                end: startTime + durationMs, // Same end time as video
+              },
+              placement: {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+                rotation: 0,
+                scaleX: 1,
+                scaleY: 1,
+              },
+              properties: {
+                elementId: `audio-${audioId}`,
+                src: objectUrl, // Same source as video
+                audioType: 'video-audio',
+                audioOffset: 0,
+                // Link to video element for sync
+                linkedVideoId: videoId,
+              },
+            };
+
+            this.addEditorElement(audioEditorElement);
+            this.maxRows = Math.max(this.maxRows, audioRow + 1);
+          }
+
+          // Store video reference
+          this.videos.push({
+            element: videoElement,
+            id: videoId,
+            url: objectUrl,
+            name: file.name || 'Video',
+            duration: durationMs,
+            thumbnails,
+          });
+
+          // Save state for undo/redo
+          if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+            window.dispatchSaveTimelineState(this);
+          }
+
+          resolve({
+            videoElement: videoEditorElement,
+            audioElement: audioEditorElement,
+            hasAudio,
+          });
+        } catch (error) {
+          console.error('Error processing video:', error);
+          reject(error);
+        }
+      };
+
+      videoElement.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('Failed to load video file'));
+      };
+    });
+  }
+
+  /**
+   * Generate thumbnails for a video element
+   */
+  async generateVideoThumbnails(videoElement) {
+    const thumbnails = [];
+    const count = Math.max(3, Math.round(videoElement.duration));
+
+    const thumbWidth = Math.max(32, Math.floor(videoElement.videoWidth / count));
+    const thumbHeight = Math.max(40, Math.floor(videoElement.videoHeight * 0.12));
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = thumbWidth;
+    canvas.height = thumbHeight;
+
+    for (let i = 0; i < count; i++) {
+      const time = (videoElement.duration * i) / (count - 1 || 1);
+      videoElement.currentTime = time;
+
+      await new Promise(res => {
+        const handler = () => {
+          ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+          thumbnails.push(canvas.toDataURL('image/jpeg', 0.7));
+          res();
+        };
+        videoElement.addEventListener('seeked', handler, { once: true });
+      });
+    }
+
+    // Reset video to beginning
+    videoElement.currentTime = 0;
+
+    return thumbnails;
+  }
+
+  /**
+   * Find an available row for a new element
+   * @param {string} elementType - Type of element (audio, video, imageUrl)
+   * @param {number} startTime - Start time of new element
+   * @param {number} endTime - End time of new element
+   * @param {number} excludeRow - Row to exclude from search (optional)
+   * @returns {number} - Available row index
+   */
+  findAvailableRow(elementType, startTime, endTime, excludeRow = null) {
+    // Start from row 0 for video/images, find separate rows for audio
+    let startingRow = elementType === 'audio' ? 1 : 0;
+
+    for (let row = startingRow; row < 100; row++) {
+      if (excludeRow !== null && row === excludeRow) continue;
+
+      const rowElements = this.editorElements.filter(el => el.row === row);
+
+      // Check if row is empty
+      if (rowElements.length === 0) {
+        return row;
+      }
+
+      // Check type compatibility
+      const rowType = rowElements[0]?.type;
+      const isCompatible = this.areTypesCompatibleForRow(rowType, elementType);
+
+      if (!isCompatible) continue;
+
+      // Check for time overlap
+      const hasOverlap = rowElements.some(el => {
+        return !(endTime <= el.timeFrame.start || startTime >= el.timeFrame.end);
+      });
+
+      if (!hasOverlap) {
+        return row;
+      }
+    }
+
+    // If no available row found, return next row after max
+    return this.maxRows;
+  }
+
+  /**
+   * Check if two element types can share a row
+   */
+  areTypesCompatibleForRow(type1, type2) {
+    // Subtitles can only be with subtitles
+    if (type1 === 'text' || type2 === 'text') {
+      return type1 === type2;
+    }
+    // All other types (audio, video, imageUrl, image) can mix together
+    const mixableTypes = ['audio', 'video', 'imageUrl', 'image'];
+    return mixableTypes.includes(type1) && mixableTypes.includes(type2);
   }
 
   async loadAudioFromUrl(url) {
@@ -7675,7 +8184,17 @@ export class Store {
   }
 
   setEditorElements(editorElements) {
-    this.editorElements = editorElements;
+    // Deduplicate elements by ID, keeping the first occurrence
+    const seenIds = new Set();
+    const uniqueElements = editorElements.filter(el => {
+      if (seenIds.has(el.id)) {
+        console.warn(`Duplicate element ID ${el.id} detected, removing duplicate.`);
+        return false;
+      }
+      seenIds.add(el.id);
+      return true;
+    });
+    this.editorElements = uniqueElements;
     this.updateSelectedElement();
     this.refreshElements();
     if (!this.isInitializing && !this.isUndoRedoOperation) {
@@ -8922,6 +9441,17 @@ export class Store {
   }
 
   addEditorElement(editorElement, isImageUrl = false) {
+    // Prevent adding elements with duplicate IDs
+    const existingElement = this.editorElements.find(
+      el => el.id === editorElement.id
+    );
+    if (existingElement) {
+      console.warn(
+        `Element with ID ${editorElement.id} already exists, skipping duplicate.`
+      );
+      return;
+    }
+
     // Create audio element first if it's an audio type
     if (editorElement.type === 'audio') {
       // Remove existing audio element if it exists
@@ -8976,6 +9506,333 @@ export class Store {
       this.optimizedCleanupEmptyRows();
       this.refreshElements();
     }
+  }
+
+  // ==========================================
+  // SPLIT/CUT FUNCTIONALITY FOR TIMELINE ITEMS
+  // ==========================================
+
+  /**
+   * Split an audio element at the specified time point
+   * Creates two new audio clips from the original
+   * @param {Object} item - The audio element to split
+   * @param {number} splitPoint - The time in milliseconds where to split
+   */
+  splitAudioElement(item, splitPoint) {
+    if (!item || item.type !== 'audio') {
+      console.error('Invalid item for audio split');
+      return;
+    }
+
+    const { timeFrame, properties, row, id } = item;
+
+    // Validate split point is within the element's timeframe
+    if (splitPoint <= timeFrame.start || splitPoint >= timeFrame.end) {
+      console.warn('Split point is outside the element timeframe');
+      return;
+    }
+
+    // Calculate the minimum duration (100ms) to prevent tiny clips
+    const minDuration = 100;
+    if (splitPoint - timeFrame.start < minDuration || timeFrame.end - splitPoint < minDuration) {
+      console.warn('Split would create clips that are too short');
+      return;
+    }
+
+    // Generate unique IDs for the new elements
+    const firstId = `${id}_split_1_${Date.now()}`;
+    const secondId = `${id}_split_2_${Date.now()}`;
+
+    // Calculate audio offsets
+    // The first clip keeps the original offset
+    const originalOffset = properties.audioOffset || 0;
+    // The second clip's offset is the original offset plus the time from start to split point
+    const secondOffset = originalOffset + (splitPoint - timeFrame.start);
+
+    // Create the first element (start to split point)
+    const firstElement = {
+      ...item,
+      id: firstId,
+      timeFrame: {
+        start: timeFrame.start,
+        end: splitPoint,
+      },
+      properties: {
+        ...properties,
+        elementId: `audio-${firstId}`,
+        audioOffset: originalOffset,
+      },
+    };
+
+    // Create the second element (split point to end)
+    const secondElement = {
+      ...item,
+      id: secondId,
+      timeFrame: {
+        start: splitPoint,
+        end: timeFrame.end,
+      },
+      properties: {
+        ...properties,
+        elementId: `audio-${secondId}`,
+        audioOffset: secondOffset,
+      },
+    };
+
+    // Remove the original element
+    const filteredElements = this.editorElements.filter(el => el.id !== id);
+
+    // Remove the original audio DOM element if it exists
+    const originalAudioEl = document.getElementById(properties.elementId);
+    if (originalAudioEl) {
+      originalAudioEl.remove();
+    }
+
+    // Add the two new elements
+    this.setEditorElements([firstElement, secondElement, ...filteredElements]);
+
+    // Create audio DOM elements for the new clips
+    this.createAudioDOMElement(firstElement);
+    this.createAudioDOMElement(secondElement);
+
+    this.refreshElements();
+
+    // Save state for undo/redo
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+  }
+
+  /**
+   * Split a video element at the specified time point
+   * Creates two new video clips from the original
+   * @param {Object} item - The video element to split
+   * @param {number} splitPoint - The time in milliseconds where to split
+   */
+  splitVideoElement(item, splitPoint) {
+    if (!item || item.type !== 'video') {
+      console.error('Invalid item for video split');
+      return;
+    }
+
+    const { timeFrame, properties, row, id, placement } = item;
+
+    // Validate split point is within the element's timeframe
+    if (splitPoint <= timeFrame.start || splitPoint >= timeFrame.end) {
+      console.warn('Split point is outside the element timeframe');
+      return;
+    }
+
+    // Calculate the minimum duration (100ms) to prevent tiny clips
+    const minDuration = 100;
+    if (splitPoint - timeFrame.start < minDuration || timeFrame.end - splitPoint < minDuration) {
+      console.warn('Split would create clips that are too short');
+      return;
+    }
+
+    // Generate unique IDs for the new elements
+    const firstId = `${id}_split_1_${Date.now()}`;
+    const secondId = `${id}_split_2_${Date.now()}`;
+
+    // Calculate video offsets
+    const originalOffset = properties.videoOffset || 0;
+    const secondOffset = originalOffset + (splitPoint - timeFrame.start);
+
+    // Calculate thumbnail distribution based on split point
+    const originalThumbnails = properties.thumbnails || [];
+    const elementDuration = timeFrame.end - timeFrame.start;
+    const totalVideoDuration = properties.duration || elementDuration;
+    const thumbnailDuration = properties.thumbnailDuration || (totalVideoDuration / Math.max(1, originalThumbnails.length));
+
+    // Calculate what portion of the element is before/after split
+    const firstDuration = splitPoint - timeFrame.start;
+    const secondDuration = timeFrame.end - splitPoint;
+    const totalThumbnails = originalThumbnails.length;
+
+    // Calculate thumbnail split based on time proportions
+    const firstProportion = firstDuration / elementDuration;
+    const splitThumbnailIndex = Math.max(1, Math.round(totalThumbnails * firstProportion));
+
+    // Distribute thumbnails to each segment - ensure each gets at least some thumbnails
+    const firstThumbnails = originalThumbnails.slice(0, splitThumbnailIndex);
+    const secondThumbnails = originalThumbnails.slice(Math.max(0, splitThumbnailIndex - 1));
+
+    // If one segment has no thumbnails, give it a copy of the original
+    const finalFirstThumbnails = firstThumbnails.length > 0 ? firstThumbnails : [...originalThumbnails];
+    const finalSecondThumbnails = secondThumbnails.length > 0 ? secondThumbnails : [...originalThumbnails];
+
+    // Create the first element (start to split point)
+    const firstElement = {
+      ...item,
+      id: firstId,
+      fabricObject: null, // Will be recreated
+      timeFrame: {
+        start: timeFrame.start,
+        end: splitPoint,
+      },
+      placement: placement ? { ...placement } : undefined,
+      properties: {
+        ...properties,
+        elementId: `video-${firstId}`,
+        videoOffset: originalOffset,
+        thumbnails: finalFirstThumbnails,
+        thumbnailDuration: thumbnailDuration,
+        duration: firstDuration,
+      },
+    };
+
+    // Create the second element (split point to end)
+    const secondElement = {
+      ...item,
+      id: secondId,
+      fabricObject: null, // Will be recreated
+      timeFrame: {
+        start: splitPoint,
+        end: timeFrame.end,
+      },
+      placement: placement ? { ...placement } : undefined,
+      properties: {
+        ...properties,
+        elementId: `video-${secondId}`,
+        videoOffset: secondOffset,
+        thumbnails: finalSecondThumbnails,
+        thumbnailDuration: thumbnailDuration,
+        duration: secondDuration,
+      },
+    };
+
+    // Remove the original element from editor elements
+    const filteredElements = this.editorElements.filter(el => el.id !== id);
+
+    // Clean up original video DOM element and fabric object
+    if (item.fabricObject && this.canvas) {
+      this.canvas.remove(item.fabricObject);
+    }
+    const originalVideoEl = document.getElementById(properties.elementId);
+    if (originalVideoEl) {
+      originalVideoEl.pause();
+      // Don't remove - we'll reuse the source for new elements
+    }
+
+    // Add the two new elements
+    this.setEditorElements([firstElement, secondElement, ...filteredElements]);
+
+    this.refreshElements();
+
+    // Save state for undo/redo
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+  }
+
+  /**
+   * Split an image element at the specified time point
+   * Creates two new image clips from the original
+   * @param {Object} item - The image element to split
+   * @param {number} splitPoint - The time in milliseconds where to split
+   */
+  splitImageElement(item, splitPoint) {
+    if (!item || (item.type !== 'imageUrl' && item.type !== 'image')) {
+      console.error('Invalid item for image split');
+      return;
+    }
+
+    const { timeFrame, properties, row, id, placement } = item;
+
+    // Validate split point is within the element's timeframe
+    if (splitPoint <= timeFrame.start || splitPoint >= timeFrame.end) {
+      console.warn('Split point is outside the element timeframe');
+      return;
+    }
+
+    // Calculate the minimum duration (100ms) to prevent tiny clips
+    const minDuration = 100;
+    if (splitPoint - timeFrame.start < minDuration || timeFrame.end - splitPoint < minDuration) {
+      console.warn('Split would create clips that are too short');
+      return;
+    }
+
+    // Generate unique IDs for the new elements
+    const firstId = `${id}_split_1_${Date.now()}`;
+    const secondId = `${id}_split_2_${Date.now()}`;
+
+    // Create the first element (start to split point)
+    const firstElement = {
+      ...item,
+      id: firstId,
+      fabricObject: null, // Will be recreated
+      timeFrame: {
+        start: timeFrame.start,
+        end: splitPoint,
+      },
+      placement: placement ? { ...placement } : undefined,
+      properties: {
+        ...properties,
+        elementId: `image-${firstId}`,
+      },
+    };
+
+    // Create the second element (split point to end)
+    const secondElement = {
+      ...item,
+      id: secondId,
+      fabricObject: null, // Will be recreated
+      timeFrame: {
+        start: splitPoint,
+        end: timeFrame.end,
+      },
+      placement: placement ? { ...placement } : undefined,
+      properties: {
+        ...properties,
+        elementId: `image-${secondId}`,
+      },
+    };
+
+    // Remove the original element from editor elements
+    const filteredElements = this.editorElements.filter(el => el.id !== id);
+
+    // Clean up original fabric object
+    if (item.fabricObject && this.canvas) {
+      this.canvas.remove(item.fabricObject);
+    }
+
+    // Add the two new elements
+    this.setEditorElements([firstElement, secondElement, ...filteredElements]);
+
+    this.refreshElements();
+
+    // Save state for undo/redo
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+  }
+
+  /**
+   * Helper method to create an audio DOM element for a clip
+   * @param {Object} element - The audio editor element
+   */
+  createAudioDOMElement(element) {
+    if (element.type !== 'audio' || !element.properties) return;
+
+    // Remove existing audio element if it exists
+    const existingAudio = document.getElementById(element.properties.elementId);
+    if (existingAudio) {
+      existingAudio.remove();
+    }
+
+    // Create new audio element
+    const audioElement = document.createElement('audio');
+    audioElement.id = element.properties.elementId;
+    audioElement.src = element.properties.src;
+    audioElement.playbackRate = this.playbackRate;
+    audioElement.volume = this.volume;
+
+    // Set initial time based on offset if provided
+    if (element.properties.audioOffset !== undefined) {
+      audioElement.currentTime = element.properties.audioOffset / 1000;
+    }
+
+    document.body.appendChild(audioElement);
   }
 
   removeAllElementsForScene(sceneId) {
@@ -13778,6 +14635,181 @@ export class Store {
     this.ghostState.draggedRowIndex = null;
     this.ghostState.dragOverRowIndex = null;
     this.ghostState.rowInsertPosition = null;
+  });
+
+  // Ghost drag methods for timeline elements
+  startGhostDrag = action((element, clickOffset, rowIndex, mode = 'move') => {
+    this.ghostState.isDragging = true;
+    this.ghostState.ghostElement = element;
+    this.ghostState.dragMode = mode;
+    this.ghostState.clickOffset = clickOffset;
+    this.ghostState.sourceRowIndex = rowIndex;
+  });
+
+  startFileGhostDrag = action((file, elementType, duration) => {
+    this.ghostState.isFileDragging = true;
+    this.ghostState.fileGhostElement = file;
+    this.ghostState.fileElementType = elementType;
+    this.ghostState.fileDuration = duration;
+  });
+
+  startGalleryGhostDrag = action((item, elementType, duration) => {
+    this.ghostState.isGalleryDragging = true;
+    this.ghostState.galleryGhostElement = item;
+    this.ghostState.galleryElementType = elementType;
+    this.ghostState.galleryDuration = duration;
+  });
+
+  startAnimationGhostDrag = action((animation, clickOffset, rowIndex) => {
+    this.ghostState.isDragging = true;
+    this.ghostState.ghostElement = animation;
+    this.ghostState.clickOffset = clickOffset;
+    this.ghostState.sourceRowIndex = rowIndex;
+    this.ghostState.dragMode = 'animation';
+  });
+
+  startMultiGhostDrag = action((elements, clickOffset, rowIndex) => {
+    this.ghostState.isDragging = true;
+    this.ghostState.multiGhostElements = elements;
+    this.ghostState.clickOffset = clickOffset;
+    this.ghostState.sourceRowIndex = rowIndex;
+    this.ghostState.dragMode = 'multi';
+  });
+
+  startResizeGhost = action((element, resizeType, clickOffset = 0) => {
+    this.ghostState.isResizing = true;
+    this.ghostState.resizeType = resizeType;
+    this.ghostState.resizeGhostElement = {
+      ...element,
+      left: (element.timeFrame.start / this.maxTime) * 100,
+      width: ((element.timeFrame.end - element.timeFrame.start) / this.maxTime) * 100,
+      row: element.row,
+      elementType: element.type,
+    };
+    this.ghostState.clickOffset = clickOffset;
+    this.ghostState.initialElementStart = element.timeFrame.start;
+    this.ghostState.initialElementEnd = element.timeFrame.end;
+  });
+
+  updateResizeGhost = action((newStart, newEnd, canPush = true) => {
+    if (!this.ghostState.isResizing || !this.ghostState.resizeGhostElement) return;
+
+    this.ghostState.resizeGhostElement = {
+      ...this.ghostState.resizeGhostElement,
+      left: (newStart / this.maxTime) * 100,
+      width: ((newEnd - newStart) / this.maxTime) * 100,
+      canPush,
+    };
+  });
+
+  finishResizeGhost = action(() => {
+    this.ghostState.isResizing = false;
+    this.ghostState.resizeType = null;
+    this.ghostState.resizeGhostElement = null;
+    this.ghostState.initialElementEnd = null;
+  });
+
+  resetGhostState = action(() => {
+    this.ghostState.isDragging = false;
+    this.ghostState.ghostElement = null;
+    this.ghostState.ghostMarkerPosition = null;
+    this.ghostState.dragMode = null;
+    this.ghostState.clickOffset = 0;
+    this.ghostState.sourceRowIndex = null;
+    this.ghostState.isFileDragging = false;
+    this.ghostState.fileGhostElement = null;
+    this.ghostState.fileGhostPosition = null;
+    this.ghostState.fileTargetRow = null;
+    this.ghostState.isGalleryDragging = false;
+    this.ghostState.galleryGhostElement = null;
+    // Reset resize ghost state
+    this.ghostState.isResizing = false;
+    this.ghostState.resizeType = null;
+    this.ghostState.resizeGhostElement = null;
+    this.ghostState.initialElementEnd = null;
+  });
+
+  updateGalleryGhost = action((position, rowIndex, isIncompatible = false) => {
+    this.ghostState.isGalleryDragging = true;
+    this.ghostState.galleryGhostPosition = position;
+    this.ghostState.galleryTargetRow = rowIndex;
+    this.ghostState.isIncompatible = isIncompatible;
+  });
+
+  updateFileGhost = action((position, rowIndex, isIncompatible = false) => {
+    this.ghostState.isFileDragging = true;
+    this.ghostState.fileGhostPosition = position;
+    this.ghostState.fileTargetRow = rowIndex;
+    this.ghostState.isFileIncompatible = isIncompatible;
+  });
+
+  finishGalleryGhostDrag = action((position, targetRow, callback) => {
+    if (callback && typeof callback === 'function') {
+      callback(position, targetRow);
+    }
+    this.ghostState.isGalleryDragging = false;
+    this.ghostState.galleryGhostElement = null;
+    this.ghostState.galleryGhostPosition = null;
+    this.ghostState.galleryTargetRow = null;
+    this.ghostState.galleryElementType = null;
+    this.ghostState.galleryDuration = null;
+  });
+
+  finishFileGhostDrag = action((position, targetRow, callback) => {
+    if (callback && typeof callback === 'function') {
+      callback(position, targetRow);
+    }
+    this.ghostState.isFileDragging = false;
+    this.ghostState.fileGhostElement = null;
+    this.ghostState.fileGhostPosition = null;
+    this.ghostState.fileTargetRow = null;
+    this.ghostState.fileElementType = null;
+    this.ghostState.fileDuration = null;
+  });
+
+  finishAnimationGhostDrag = action((animationId, targetRow, newStartTime) => {
+    const animation = this.animations.find(a => a.id === animationId);
+    if (animation) {
+      animation.row = targetRow;
+      if (newStartTime !== undefined) {
+        animation.startTime = newStartTime;
+      }
+    }
+    this.resetGhostState();
+  });
+
+  shiftRowsDown = action(fromRow => {
+    // Shift all elements at or below fromRow down by 1
+    this.editorElements.forEach(element => {
+      if (element.row >= fromRow) {
+        element.row += 1;
+      }
+    });
+    // Also shift animations
+    this.animations?.forEach(animation => {
+      if (animation.row >= fromRow) {
+        animation.row += 1;
+      }
+    });
+    // Update maxRows
+    this.maxRows = Math.max(this.maxRows, fromRow + 1);
+  });
+
+  moveElementToInterRowDropZone = action((elementId, targetRow, position = null) => {
+    const element = this.editorElements.find(el => el.id === elementId);
+    if (!element) return;
+
+    // Update the element's row
+    element.row = targetRow;
+
+    // Recalculate maxRows
+    this.recalculateMaxRows();
+
+    // Refresh and save
+    this.refreshElements();
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
   });
 
   // Delete an entire row: remove all elements in that row and shift rows above it down

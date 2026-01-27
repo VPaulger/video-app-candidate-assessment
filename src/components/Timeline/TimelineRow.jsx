@@ -4,6 +4,7 @@ import React, {
   useRef,
   useCallback,
   useMemo,
+  useLayoutEffect,
 } from 'react';
 import TimelineItem from './timeline-item';
 import AnimationItem from './AnimationItem';
@@ -24,6 +25,7 @@ import { uploadVideoToAWS } from '../../utils/awsUpload';
 import { saveVideoData } from '../../utils/saveVideoMetadata';
 import { user as selectUser } from '../../redux/auth/selectors';
 import { Resizable } from 'react-resizable';
+import { useError } from '../../contexts/ErrorContext';
 
 // Helper function to check if element types are compatible for mixing on same row
 const areTypesCompatible = (type1, type2) => {
@@ -71,9 +73,11 @@ const TimelineRow = observer(
       useState(false);
     const [isDraggingTimelineElement, setIsDraggingTimelineElement] =
       useState(false);
+    const [isUploading, setIsUploading] = useState(false);
 
     const dispatch = useDispatch();
     const dragDropManager = useDragDropManager();
+    const { showInfoNeutral, showDonePositive, showError } = useError();
 
     // Optimized row height management
     const rowType = overlays[0]?.type;
@@ -137,7 +141,11 @@ const TimelineRow = observer(
       draggedElementId: null,
     });
 
-    const handleHover = useCallback(
+    // Throttling refs for smooth drag performance
+    const rafRef = useRef(null);
+    const lastHoverArgsRef = useRef(null);
+
+    const handleHoverInternal = useCallback(
       (draggedItem, monitor) => {
         const hoverBoundingRect = dropRef.current?.getBoundingClientRect();
         const clientOffset = monitor.getClientOffset();
@@ -510,6 +518,37 @@ const TimelineRow = observer(
       ]
     );
 
+    // Throttled hover handler using requestAnimationFrame for smooth dragging
+    const handleHover = useCallback(
+      (draggedItem, monitor) => {
+        // Store the latest args
+        lastHoverArgsRef.current = { draggedItem, monitor };
+
+        // If RAF is already scheduled, skip
+        if (rafRef.current) return;
+
+        rafRef.current = requestAnimationFrame(() => {
+          rafRef.current = null;
+          if (lastHoverArgsRef.current) {
+            handleHoverInternal(
+              lastHoverArgsRef.current.draggedItem,
+              lastHoverArgsRef.current.monitor
+            );
+          }
+        });
+      },
+      [handleHoverInternal]
+    );
+
+    // Cleanup RAF on unmount
+    useEffect(() => {
+      return () => {
+        if (rafRef.current) {
+          cancelAnimationFrame(rafRef.current);
+        }
+      };
+    }, []);
+
     const getAudioLengthFromUrl = async url => {
       return new Promise((resolve, reject) => {
         const audio = new Audio();
@@ -573,6 +612,8 @@ const TimelineRow = observer(
             // Handle single ghost drop
             if (store.ghostState.isDragging) {
               const draggedElement = store.ghostState.draggedElement;
+              if (!draggedElement) return;
+
               const rowType = overlays[0]?.type;
 
               // Check if element type is compatible with target row
@@ -861,11 +902,7 @@ const TimelineRow = observer(
                       }
                     }
                   } catch (e) {
-                    handleCatchError(
-                      e,
-                      'Auto-select effect video failed',
-                      false
-                    );
+                    showError('Auto-select effect video failed', e.message);
                   }
                 }
               );
@@ -1360,7 +1397,7 @@ const TimelineRow = observer(
             });
           }
         } catch (error) {
-          handleCatchError(error, 'Failed to upload image');
+          showError('Failed to upload image', error.message);
         }
       } else if (file.type.startsWith('video/')) {
         try {
@@ -1407,7 +1444,7 @@ const TimelineRow = observer(
             isNeedLoader: false,
           });
         } catch (error) {
-          handleCatchError(error, 'Failed to upload video');
+          showError('Failed to upload video', error.message);
         }
       }
     };
@@ -1527,7 +1564,7 @@ const TimelineRow = observer(
               }
             }
           } catch (error) {
-            handleCatchError(error, 'Failed to upload image');
+            showError('Failed to upload image', error.message);
           }
         } else if (file.type.startsWith('video/')) {
         }
@@ -1905,8 +1942,13 @@ const TimelineRow = observer(
                 const file = files[0];
 
                 if (file.type.startsWith('audio/')) {
+                  showInfoNeutral('Uploading audio...', file.name);
+                  // Audio upload handling would go here
                 } else if (file.type.startsWith('image/')) {
                   try {
+                    setIsUploading(true);
+                    showInfoNeutral('Uploading image...', file.name);
+
                     const formData = new FormData();
                     formData.append('image', file);
 
@@ -1920,12 +1962,18 @@ const TimelineRow = observer(
                         row: 0,
                         startTime: 0,
                       });
+                      showDonePositive('Image uploaded successfully');
                     }
                   } catch (error) {
-                    handleCatchError(error, 'Failed to upload image');
+                    showError('Failed to upload image', error.message);
+                  } finally {
+                    setIsUploading(false);
                   }
                 } else if (file.type.startsWith('video/')) {
                   try {
+                    setIsUploading(true);
+                    showInfoNeutral('Uploading video...', file.name);
+
                     // Handle video locally for immediate preview
                     await store.handleVideoUpload(file);
 
@@ -1971,9 +2019,15 @@ const TimelineRow = observer(
                       startTime: 0,
                       isNeedLoader: false,
                     });
+
+                    showDonePositive('Video uploaded successfully');
                   } catch (error) {
-                    handleCatchError(error, 'Failed to upload video');
+                    showError('Failed to upload video', error.message);
+                  } finally {
+                    setIsUploading(false);
                   }
+                } else {
+                  showError('Unsupported file type', `Cannot upload ${file.type}`);
                 }
               }
             }}
@@ -2286,8 +2340,13 @@ const TimelineRow = observer(
               const file = files[0];
 
               if (file.type.startsWith('audio/')) {
+                showInfoNeutral('Uploading audio...', file.name);
+                // Audio upload handling would go here
               } else if (file.type.startsWith('image/')) {
                 try {
+                  setIsUploading(true);
+                  showInfoNeutral('Uploading image...', file.name);
+
                   const formData = new FormData();
                   formData.append('image', file);
 
@@ -2301,12 +2360,18 @@ const TimelineRow = observer(
                       row: rowIndex + 1,
                       startTime: 0,
                     });
+                    showDonePositive('Image uploaded successfully');
                   }
                 } catch (error) {
-                  handleCatchError(error, 'Failed to upload image');
+                  showError('Failed to upload image', error.message);
+                } finally {
+                  setIsUploading(false);
                 }
               } else if (file.type.startsWith('video/')) {
                 try {
+                  setIsUploading(true);
+                  showInfoNeutral('Uploading video...', file.name);
+
                   // Handle video locally for immediate preview
                   await store.handleVideoUpload(file);
 
@@ -2350,9 +2415,15 @@ const TimelineRow = observer(
                     startTime: 0,
                     isNeedLoader: false,
                   });
+
+                  showDonePositive('Video uploaded successfully');
                 } catch (error) {
-                  handleCatchError(error, 'Failed to upload video');
+                  showError('Failed to upload video', error.message);
+                } finally {
+                  setIsUploading(false);
                 }
+              } else {
+                showError('Unsupported file type', `Cannot upload ${file.type}`);
               }
             }
           }}

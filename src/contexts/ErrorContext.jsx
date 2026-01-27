@@ -15,7 +15,7 @@ export const useError = () => {
 export const ErrorProvider = ({ children }) => {
   const [errors, setErrors] = useState([]);
 
-  const showError = useCallback((message, description = '', duration = 3000) => {
+  const showError = useCallback((message, description = '', duration = 5000) => {
     const id = Date.now();
     const newError = { id, message, description, duration, type: 'info-negative' };
     setErrors(prev => [...prev, newError]);
@@ -67,7 +67,7 @@ export const ErrorProvider = ({ children }) => {
       hideError 
     }}>
       {children}
-      {errors.map(error => (
+      {errors.map((error, index) => (
         <ErrorNotification
           key={error.id}
           message={error.message}
@@ -75,6 +75,7 @@ export const ErrorProvider = ({ children }) => {
           type={error.type}
           duration={error.duration}
           onClose={() => hideError(error.id)}
+          index={index}
         />
       ))}
     </ErrorContext.Provider>
