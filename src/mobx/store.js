@@ -92,6 +92,10 @@ export class Store {
     this.isRefreshingAnimations = false;
     this.isRefreshingElements = false;
     this.ANIMATION_BATCH_DELAY = 16; // ~1 frame at 60fps
+    this.selectedCanvasItemId = null;
+    this.isDraggingCanvasItem = false;
+    this.canvasDragState = null;
+
 
     this.dragState = {
       isDragging: false,
@@ -1080,6 +1084,79 @@ export class Store {
     this.isRecording = false;
   }
 
+  selectCanvasItem(id){
+    this.selectedCanvasItemId = id;
+  }
+  
+  startCanvasDrag(elementId, mouseX, mouseY) {
+    const el = this.editorElements.find(e => e.id === elementId);
+    if (!el) return;
+  
+    const canvas = el.canvas ?? { x: 0.5, y: 0.5 };
+  
+    this.isDraggingCanvasItem = true;
+    this.canvasDragState = {
+      elementId,
+      startMouseX: mouseX,
+      startMouseY: mouseY,
+      startX: canvas.x,
+      startY: canvas.y,
+    };
+  }
+  updateCanvasDrag(mouseX, mouseY, canvasWidth, canvasHeight) {
+    if (!this.isDraggingCanvasItem || !this.canvasDragState) return;
+  
+    const {
+      elementId,
+      startMouseX,
+      startMouseY,
+      startX,
+      startY,
+    } = this.canvasDragState;
+  
+    const dx = (mouseX - startMouseX) / canvasWidth;
+    const dy = (mouseY - startMouseY) / canvasHeight;
+  
+    const index = this.editorElements.findIndex(e => e.id === elementId);
+    if (index === -1) return;
+  
+    const el = this.editorElements[index];
+  
+    this.editorElements[index] = {
+      ...el,
+      canvas: {
+        ...(el.canvas ?? {}),
+        x: startX + dx,
+        y: startY + dy,
+      },
+    };
+  }
+  
+  endCanvasDrag() {
+    if (!this.canvasDragState) return;
+  
+    const { elementId } = this.canvasDragState;
+    const index = this.editorElements.findIndex(e => e.id === elementId);
+  
+    if (index !== -1) {
+      const el = this.editorElements[index];
+      const c = el.canvas ?? { x: 0.5, y: 0.5 };
+  
+      this.editorElements[index] = {
+        ...el,
+        canvas: {
+          ...c,
+          x: Math.min(1, Math.max(0, c.x)),
+          y: Math.min(1, Math.max(0, c.y)),
+        },
+      };
+    }
+  
+    this.isDraggingCanvasItem = false;
+    this.canvasDragState = null;
+  
+    this.saveToHistory?.();
+  }
   refreshAnimations() {
     refreshAnimationsUtil(this);
   }
@@ -4895,6 +4972,7 @@ export class Store {
             hasBorders: true,
             type: 'video',
           });
+          fabricVideo.elementId = videoId;
           this.canvas.add(fabricVideo);
 
           // Force canvas to render and ensure video is visible
@@ -4951,6 +5029,7 @@ export class Store {
             hasBorders: true, // Enable borders for video
             type: 'video',
           });
+          fabricVideo.elementId = videoId;
 
           this.canvas.add(fabricVideo);
 
@@ -5263,6 +5342,7 @@ export class Store {
               });
 
               // Add fabric object reference
+              imageObject.elementId = id
               newElement.fabricObject = imageObject;
 
               // Update elements in a single batch
@@ -5789,6 +5869,7 @@ export class Store {
                   };
 
                   // Add new fabricObject to canvas
+                 
                   this.canvas.add(img);
 
                   // Direct update without removing/adding
@@ -6063,6 +6144,7 @@ export class Store {
             type: 'video',
           });
 
+          fabricVideo.elementId = id;
           // Create editor element
           const editorElement = {
             id: id,
@@ -13804,6 +13886,226 @@ export class Store {
 
     this.refreshElements?.();
   });
+
+  splitAudioElement(item, splitPointMs) {
+    return this.splitElement(item, splitPointMs);
+  }
+
+  splitVideoElement(item, splitPointMs) {
+    return this.splitElement(item, splitPointMs);
+  }
+
+  splitImageElement(item, splitPointMs) {
+    return this.splitElement(item, splitPointMs);
+  }
+
+  splitElement(element, splitPointMs) {
+    try {
+      if (!element || !element.id || !element.timeFrame) return false;
+
+      const idx = this.editorElements.findIndex(el => el.id === element.id);
+      if (idx === -1) return false;
+
+      const start = element.timeFrame.start;
+      const end = element.timeFrame.end;
+
+      // Validate split point
+      if (typeof splitPointMs !== 'number' || Number.isNaN(splitPointMs)) {
+        return false;
+      }
+
+      // Minimum duration constraints (you already use ~100ms in drag logic, audio can be tiny)
+      const MIN_MS = element.type === 'audio' ? 1 : 100;
+
+      // must be strictly inside (not at edges)
+      if (splitPointMs <= start + MIN_MS) return false;
+      if (splitPointMs >= end - MIN_MS) return false;
+
+      const leftDuration = splitPointMs - start;
+      const rightDuration = end - splitPointMs;
+
+      // Generate new IDs
+      const leftId = uuidv4();
+      const rightId = uuidv4();
+
+      // Keep row + placement to preserve layout
+      const row = element.row;
+
+      // Handle pointId semantics (your store has scene cleanup that expects `${sceneId}_split_...`)
+      const originalPointId = element.pointId;
+      const basePointId =
+        typeof originalPointId === 'string' && originalPointId.includes('_split_')
+          ? originalPointId.split('_split_')[0]
+          : originalPointId;
+
+      const leftPointId = originalPointId || undefined;
+      const rightPointId =
+        basePointId ? `${basePointId}_split_${rightId}` : undefined;
+
+      // Offsets
+      const baseAudioOffset = element?.properties?.audioOffset || 0;
+      const baseVideoOffset = element?.properties?.videoOffset || 0;
+
+      const deltaOffset = splitPointMs - start;
+
+      // IMPORTANT:
+      // - For audio/video, elementId MUST be unique per element (DOM lookup uses it).
+      // - For images, no DOM elementId is required.
+      const makeMediaElementId = (type, id) => `${type}-${id}`;
+
+      const leftElement = {
+        ...element,
+        id: leftId,
+        row,
+        pointId: leftPointId,
+        timeFrame: { start, end: splitPointMs },
+        // Keep fabricObject reference so we don't accidentally duplicate visuals
+        fabricObject: element.fabricObject || null,
+        properties: {
+          ...(element.properties || {}),
+          // preserve base offsets on left
+          ...(element.type === 'audio'
+            ? { audioOffset: baseAudioOffset }
+            : null),
+          ...(element.type === 'video'
+            ? { videoOffset: baseVideoOffset }
+            : null),
+          // unique DOM ids for audio/video
+          ...(element.type === 'audio'
+            ? { elementId: makeMediaElementId('audio', leftId) }
+            : null),
+          ...(element.type === 'video'
+            ? { elementId: makeMediaElementId('video', leftId) }
+            : null),
+        },
+        // If your elements carry duration fields, keep them consistent
+        duration:
+          typeof element.duration === 'number' ? leftDuration : element.duration,
+        absoluteStart:
+          typeof element.absoluteStart === 'number' ? start : element.absoluteStart,
+        absoluteEnd:
+          typeof element.absoluteEnd === 'number'
+            ? splitPointMs
+            : element.absoluteEnd,
+      };
+
+      const rightElement = {
+        ...element,
+        id: rightId,
+        row,
+        pointId: rightPointId,
+        timeFrame: { start: splitPointMs, end },
+        // Share fabricObject (same visible object, just a different timeframe)
+        fabricObject: element.fabricObject || null,
+        properties: {
+          ...(element.properties || {}),
+          ...(element.type === 'audio'
+            ? { audioOffset: baseAudioOffset + deltaOffset }
+            : null),
+          ...(element.type === 'video'
+            ? { videoOffset: baseVideoOffset + deltaOffset }
+            : null),
+          ...(element.type === 'audio'
+            ? { elementId: makeMediaElementId('audio', rightId) }
+            : null),
+          ...(element.type === 'video'
+            ? { elementId: makeMediaElementId('video', rightId) }
+            : null),
+        },
+        duration:
+          typeof element.duration === 'number' ? rightDuration : element.duration,
+        absoluteStart:
+          typeof element.absoluteStart === 'number'
+            ? splitPointMs
+            : element.absoluteStart,
+        absoluteEnd:
+          typeof element.absoluteEnd === 'number' ? end : element.absoluteEnd,
+      };
+
+      runInAction(() => {
+        // Replace at same index — timeline layout stays intact
+        const next = this.editorElements.slice();
+        next.splice(idx, 1, leftElement, rightElement);
+        this.setEditorElements(next);
+      });
+
+      // If splitting audio/video: remove old DOM element and create two new ones
+      // so updateAudioElements/updateVideoElements can find them immediately.
+      this._recreateMediaDomForSplit(element, leftElement, rightElement);
+
+      // Ensure playback sync is sane right after split
+      this.updateVideoElements?.();
+      this.updateAudioElements?.();
+
+      if (!this.isInitializing && !this.isUndoRedoOperation) {
+        this.saveToHistory?.();
+      }
+
+      return true;
+    } catch (e) {
+      console.error('splitElement failed:', e);
+      return false;
+    }
+  }
+
+  /**
+   * Internal helper: for audio/video elements, ensure DOM elements exist
+   * with the new elementIds right after split.
+   */
+  _recreateMediaDomForSplit(original, leftEl, rightEl) {
+    const t = original?.type;
+    if (t !== 'audio' && t !== 'video') return;
+
+    const src = original?.properties?.src;
+    if (!src) return;
+
+    // Remove original DOM element if it exists
+    const oldDomId = original?.properties?.elementId;
+    if (oldDomId) {
+      const oldNode = document.getElementById(oldDomId);
+      if (oldNode) oldNode.remove();
+    }
+
+    if (t === 'audio') {
+      const mk = el => {
+        const a = document.createElement('audio');
+        a.id = el.properties.elementId;
+        a.src = src;
+        a.playbackRate = this.playbackRate;
+        a.volume = this.volume;
+
+        // Start position based on offset
+        const off = el.properties.audioOffset || 0;
+        a.currentTime = Math.max(0, off / 1000);
+
+        document.body.appendChild(a);
+      };
+      mk(leftEl);
+      mk(rightEl);
+      return;
+    }
+
+    if (t === 'video') {
+      const mk = el => {
+        const v = document.createElement('video');
+        v.preload = 'auto';
+        v.playsInline = true;
+        v.muted = true;
+        v.crossOrigin = 'anonymous';
+        v.src = src;
+        v.style.display = 'none';
+        v.controls = true;
+        v.id = el.properties.elementId;
+
+        // keep playback rate consistent
+        v.playbackRate = this.playbackRate || 1;
+
+        document.body.appendChild(v);
+      };
+      mk(leftEl);
+      mk(rightEl);
+    }
+  }
 }
 
 export function isEditorAudioElement(element) {

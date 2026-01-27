@@ -7,6 +7,7 @@ import TimelineManager from '../utils/timeline/TimelineManager';
 export const useTimelineZoom = (options = {}) => {
   const { initialZoom, onZoomChange } = options;
   const timelineManager = useRef(TimelineManager.getInstance()).current;
+  const zoomAncor = useRef(null); // point in time under the mouse that must not move
 
   const [zoomValue, setZoomValue] = useState(
     initialZoom || timelineManager.viewData.zoomVal
@@ -31,9 +32,11 @@ export const useTimelineZoom = (options = {}) => {
       setZoomPercentage(timelineManager.getZoomPercentage());
 
       if (onZoomChange) {
-        onZoomChange(data);
+        onZoomChange({...data,anchor:zoomAncor.current});
       }
+      zoomAncor.current = null
     };
+   
 
     timelineManager.addEventListener('ZoomChangeUpdate', handleZoomUpdate);
 
@@ -43,21 +46,24 @@ export const useTimelineZoom = (options = {}) => {
   }, [timelineManager, onZoomChange]);
 
   const zoomIn = useCallback(
-    (step = 1) => {
+    (step = 1,anchor=null) => {
+      zoomAncor.current = anchor
       timelineManager.zoomIn(step);
     },
     [timelineManager]
   );
 
   const zoomOut = useCallback(
-    (step = 1) => {
+    (step = 1,anchor=null) => {
+      zoomAncor.current = anchor
       timelineManager.zoomOut(step);
     },
     [timelineManager]
   );
 
   const setZoom = useCallback(
-    value => {
+    (value,anchor=null) => {
+      zoomAncor.current = anchor
       timelineManager.setZoomValue(value);
     },
     [timelineManager]

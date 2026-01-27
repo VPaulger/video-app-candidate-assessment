@@ -62,6 +62,9 @@ const adjustSubtitlesForChangedTime = (
     const newWordStart = newTimeFrame.start + relativeStart * newDuration;
     const newWordEnd = newTimeFrame.start + relativeEnd * newDuration;
 
+
+    
+
     return {
       ...word,
       start: newWordStart,
@@ -853,6 +856,46 @@ const TimelineItem = observer(
       item.timeFrame.end,
     ]);
 
+    useEffect(() => {
+      if (!store.canvas) return;
+    
+      const canvas = store.canvas;
+    
+      const handleMouseDown = (e) => {
+        const target = e.target;
+        if (!target) return;
+    
+        const elementId = target.elementId;
+        if (!elementId) return;
+    
+        store.selectCanvasItem(elementId);
+        store.startCanvasDrag(elementId, e.e.clientX, e.e.clientY);
+      };
+    
+      const handleMouseMove = (e) => {
+        if (!store.isDraggingCanvasItem) return;
+        store.updateCanvasDrag(
+          e.e.clientX,
+          e.e.clientY,
+          canvas.getWidth(),
+          canvas.getHeight()
+        );
+      };
+    
+      const handleMouseUp = () => {
+        store.endCanvasDrag();
+      };
+    
+      canvas.on('mouse:down', handleMouseDown);
+      canvas.on('mouse:move', handleMouseMove);
+      canvas.on('mouse:up', handleMouseUp);
+    
+      return () => {
+        canvas.off('mouse:down', handleMouseDown);
+        canvas.off('mouse:move', handleMouseMove);
+        canvas.off('mouse:up', handleMouseUp);
+      };
+    }, [store.canvas]);
     // Add a separate effect to update the waveform when the audio offset changes
     useEffect(() => {
       if (
