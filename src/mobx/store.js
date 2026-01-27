@@ -11,12 +11,16 @@ import {
   refreshAnimationsUtil,
   updateTimeToUtil,
   refreshElementsUtil,
+  startFileGhostDragUtil,
+  updateFileGhostUtil,
+  finishFileGhostDragUtil,
 } from './store-modules';
 import { handleCatchError } from '../utils/errorHandler';
 
 export class Store {
   constructor() {
     // Add drawnPaths array to store drawn paths
+
     this.drawnPaths = [];
 
     // Add flag to prevent recursive saves
@@ -2044,8 +2048,7 @@ export class Store {
               shouldBeVisible ? 1 : 0
             );
             console.log(
-              `GL Transition ${transition.id} opacity: ${
-                shouldBeVisible ? 1 : 0
+              `GL Transition ${transition.id} opacity: ${shouldBeVisible ? 1 : 0
               }`
             );
           }
@@ -2445,17 +2448,17 @@ export class Store {
             !lastFromState ||
             !lastToState ||
             Math.abs(currentFromState.opacity - lastFromState.opacity) >
-              opacityThreshold ||
+            opacityThreshold ||
             Math.abs(currentFromState.scaleX - lastFromState.scaleX) >
-              scaleThreshold ||
+            scaleThreshold ||
             Math.abs(currentFromState.scaleY - lastFromState.scaleY) >
-              scaleThreshold ||
+            scaleThreshold ||
             Math.abs(currentToState.opacity - lastToState.opacity) >
-              opacityThreshold ||
+            opacityThreshold ||
             Math.abs(currentToState.scaleX - lastToState.scaleX) >
-              scaleThreshold ||
+            scaleThreshold ||
             Math.abs(currentToState.scaleY - lastToState.scaleY) >
-              scaleThreshold;
+            scaleThreshold;
 
           if (shouldUpdateTextures) {
             // Only log significant state changes
@@ -2464,7 +2467,7 @@ export class Store {
                 currentFromState.opacity - (lastFromState?.opacity || 1)
               ) > 0.01 ||
               Math.abs(currentToState.opacity - (lastToState?.opacity || 1)) >
-                0.01;
+              0.01;
             if (hasOpacityChange) {
             }
 
@@ -2826,13 +2829,13 @@ export class Store {
         // For video elements, also preserve dimensions and position
         ...(isEditorVideoElement(fromElement)
           ? {
-              left: fromElement.fabricObject.left,
-              top: fromElement.fabricObject.top,
-              width: fromElement.fabricObject.width,
-              height: fromElement.fabricObject.height,
-              scaleX: fromElement.fabricObject.scaleX,
-              scaleY: fromElement.fabricObject.scaleY,
-            }
+            left: fromElement.fabricObject.left,
+            top: fromElement.fabricObject.top,
+            width: fromElement.fabricObject.width,
+            height: fromElement.fabricObject.height,
+            scaleX: fromElement.fabricObject.scaleX,
+            scaleY: fromElement.fabricObject.scaleY,
+          }
           : {}),
       };
     }
@@ -2847,13 +2850,13 @@ export class Store {
         // For video elements, also preserve dimensions and position
         ...(isEditorVideoElement(toElement)
           ? {
-              left: toElement.fabricObject.left,
-              top: toElement.fabricObject.top,
-              width: toElement.fabricObject.width,
-              height: toElement.fabricObject.height,
-              scaleX: toElement.fabricObject.scaleX,
-              scaleY: toElement.fabricObject.scaleY,
-            }
+            left: toElement.fabricObject.left,
+            top: toElement.fabricObject.top,
+            width: toElement.fabricObject.width,
+            height: toElement.fabricObject.height,
+            scaleX: toElement.fabricObject.scaleX,
+            scaleY: toElement.fabricObject.scaleY,
+          }
           : {}),
       };
     }
@@ -3591,8 +3594,8 @@ export class Store {
       Array.isArray(animation.targetIds) && animation.targetIds.length > 0
         ? animation.targetIds
         : animation.targetId
-        ? [animation.targetId]
-        : [];
+          ? [animation.targetId]
+          : [];
 
     const targetElements = this.editorElements.filter(
       el => targetIds.includes(el.id) && el.type !== 'animation'
@@ -4664,7 +4667,7 @@ export class Store {
       videoElement.playsInline = true;
       videoElement.muted = true;
       videoElement.crossOrigin = 'anonymous';
-      videoElement.src = `${url}?v=${Date.now()}`;
+      videoElement.src = url.startsWith('blob:') ? url : `${url}?v=${Date.now()}`;
       videoElement.style.display = 'none';
       videoElement.muted = false;
       videoElement.volume = 1.0;
@@ -5502,7 +5505,9 @@ export class Store {
               };
 
               // Add new fabricObject to canvas
-              this.canvas.add(img);
+              if (this.canvas) {
+                this.canvas.add(img);
+              }
 
               this.addEditorElement(updatedElement, true);
 
@@ -6341,25 +6346,25 @@ export class Store {
           },
           words: words
             ? words.map((word, wordIndex) => {
-                const isLastWord =
-                  isLastSegment && wordIndex === words.length - 1;
-                // For the last word of the last segment, ensure it stays visible until the end
-                const wordEnd = isLastWord
-                  ? segmentEnd
-                  : end * 1000 + segmentDuration;
+              const isLastWord =
+                isLastSegment && wordIndex === words.length - 1;
+              // For the last word of the last segment, ensure it stays visible until the end
+              const wordEnd = isLastWord
+                ? segmentEnd
+                : end * 1000 + segmentDuration;
 
-                return {
-                  ...word,
-                  word: punctuation
-                    ? word.word
-                    : word.word.replaceAll('.', '').replaceAll(',', ''),
-                  originalWord: word.word,
-                  segmentStart: start,
-                  start: word.start * 1000 + segmentDuration,
-                  end: wordEnd,
-                  wordEnd: word.end * 1000,
-                };
-              })
+              return {
+                ...word,
+                word: punctuation
+                  ? word.word
+                  : word.word.replaceAll('.', '').replaceAll(',', ''),
+                originalWord: word.word,
+                segmentStart: start,
+                start: word.start * 1000 + segmentDuration,
+                end: wordEnd,
+                wordEnd: word.end * 1000,
+              };
+            })
             : [],
           wordObjects: [],
         },
@@ -6718,13 +6723,12 @@ export class Store {
       let displayName;
 
       if (animation.type.endsWith('Effect')) {
-        displayName = `${capitalizedType} ${
-          effectDirection === 'in'
-            ? 'In'
-            : effectDirection === 'out'
+        displayName = `${capitalizedType} ${effectDirection === 'in'
+          ? 'In'
+          : effectDirection === 'out'
             ? 'Out'
             : 'Effect'
-        }`;
+          }`;
       } else if (animation.type.endsWith('In')) {
         displayName = `${capitalizedType} In`;
       } else if (animation.type.endsWith('Out')) {
@@ -7051,9 +7055,8 @@ export class Store {
         const newDuration = newEndTime - newStartTime;
 
         const newAnimation = {
-          id: `${animationType}-${
-            targetElement.id
-          }-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          id: `${animationType}-${targetElement.id
+            }-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           type: sourceAnimation.type,
           duration: newDuration,
           effect: sourceAnimation.effect,
@@ -7536,33 +7539,72 @@ export class Store {
 
   setSelectedElement(selectedElement) {
     const previousElement = this.selectedElement;
-    this.selectedElement = selectedElement;
+
+    // Support passing an element ID instead of the whole object
+    let elementToSelect = selectedElement;
+    if (typeof selectedElement === 'string') {
+      elementToSelect = this.editorElements.find(el => el.id === selectedElement) || null;
+    }
+
+    this.selectedElement = elementToSelect;
 
     // Dispatch events for element selection changes
-    if (selectedElement && selectedElement !== previousElement) {
+    if (elementToSelect && elementToSelect !== previousElement) {
       window.dispatchEvent(
         new CustomEvent('elementSelected', {
-          detail: selectedElement,
+          detail: elementToSelect,
         })
       );
-    } else if (!selectedElement && previousElement) {
+
+      // If there's a fabric object, make sure it's selected on canvas
+      if (this.canvas && elementToSelect.fabricObject && this.canvas.getActiveObject() !== elementToSelect.fabricObject) {
+        this.canvas.setActiveObject(elementToSelect.fabricObject);
+        this.canvas.requestRenderAll();
+      }
+    } else if (!elementToSelect && previousElement) {
       window.dispatchEvent(
         new CustomEvent('elementDeselected', {
           detail: previousElement,
         })
       );
-    }
-    if (!selectedElement) {
-      // Check if canvas exists before calling discardActiveObject
+
       if (this.canvas) {
-        if (selectedElement?.fabricObject) {
-          this.canvas.discardActiveObject();
-        } else {
-          this.canvas.discardActiveObject();
-        }
+        this.canvas.discardActiveObject();
+        this.canvas.requestRenderAll();
       }
+    }
+
+    if (!elementToSelect) {
       // Clear guidelines when no element is selected
       this.clearGuidelines();
+    }
+  }
+
+  updateElementPlacement(elementId, placement) {
+    const index = this.editorElements.findIndex(el => el.id === elementId);
+    if (index !== -1) {
+      runInAction(() => {
+        this.editorElements[index] = {
+          ...this.editorElements[index],
+          placement: {
+            ...this.editorElements[index].placement,
+            ...placement,
+            // Calculate absolute width/height for convenience
+            width: (placement.width !== undefined) ? placement.width : (this.editorElements[index].placement?.width),
+            height: (placement.height !== undefined) ? placement.height : (this.editorElements[index].placement?.height),
+          }
+        };
+
+        // If it's the selected element, update the reference
+        if (this.selectedElement?.id === elementId) {
+          this.selectedElement = this.editorElements[index];
+        }
+      });
+
+      // Sync with Redux (debounced)
+      if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+        window.dispatchSaveTimelineState(this);
+      }
     }
   }
 
@@ -7674,6 +7716,85 @@ export class Store {
     this.setSelectedElement(null);
   }
 
+
+
+  // Ghost Drag Actions
+  startFileGhostDrag(file, elementType, duration) {
+    this.ghostState.isFileDragging = true;
+    this.ghostState.fileData = file;
+    this.ghostState.fileGhostElement = {
+      left: 0,
+      width: (duration / this.maxTime) * 100, // Approximate width percentage
+      row: 0,
+      elementType: elementType,
+      duration: duration,
+      isIncompatible: false,
+    };
+  }
+
+  updateFileGhost(timePosition, row, isIncompatible) {
+    if (!this.ghostState.fileGhostElement) return;
+
+    // Convert time position to percentage
+    const left = (timePosition / this.maxTime) * 100;
+
+    this.ghostState.fileGhostElement.left = left;
+    this.ghostState.fileGhostElement.row = row;
+    this.ghostState.fileGhostElement.isIncompatible = isIncompatible;
+  }
+
+  resetGhostState() {
+    this.ghostState.isDragging = false;
+    this.ghostState.ghostElement = null;
+    this.ghostState.draggedElement = null;
+    this.ghostState.isIncompatibleRow = false;
+
+    this.ghostState.isMultiDragging = false;
+    this.ghostState.multiGhostElements = [];
+
+    this.ghostState.isGalleryDragging = false;
+    this.ghostState.galleryGhostElement = null;
+    this.ghostState.galleryItemData = null;
+
+    this.ghostState.isFileDragging = false;
+    this.ghostState.fileGhostElement = null;
+    this.ghostState.fileData = null;
+
+    this.ghostState.isDraggingRow = false;
+    this.ghostState.draggedRowIndex = null;
+    this.ghostState.dragOverRowIndex = null;
+  }
+
+  // Gallery Ghost methods used in timeline-grid.jsx
+  startGalleryGhostDrag(item, elementType, duration) {
+    this.ghostState.isGalleryDragging = true;
+    this.ghostState.galleryItemData = item;
+    this.ghostState.galleryGhostElement = {
+      left: 0,
+      width: (duration / this.maxTime) * 100,
+      row: 0,
+      elementType: elementType,
+      duration: duration,
+      isIncompatible: false
+    };
+  }
+
+  updateGalleryGhost(timePosition, row, isIncompatible) {
+    if (!this.ghostState.galleryGhostElement) return;
+
+    const left = (timePosition / this.maxTime) * 100;
+
+    this.ghostState.galleryGhostElement.left = left;
+    this.ghostState.galleryGhostElement.row = row;
+    this.ghostState.galleryGhostElement.isIncompatible = isIncompatible;
+  }
+
+  finishGalleryGhostDrag(timePosition, row, callback) {
+    if (this.ghostState.galleryGhostElement && !this.ghostState.galleryGhostElement.isIncompatible) {
+      callback(timePosition, row);
+    }
+    this.resetGhostState();
+  }
   setEditorElements(editorElements) {
     this.editorElements = editorElements;
     this.updateSelectedElement();
@@ -7862,16 +7983,16 @@ export class Store {
           // Deep copy properties if they exist
           properties: elementToCopy.properties
             ? {
-                ...elementToCopy.properties,
-                // Generate new elementId for video/audio elements to avoid conflicts
-                elementId: elementToCopy.properties.elementId
-                  ? `${elementToCopy.type}-${uuidv4()}`
-                  : elementToCopy.properties.elementId,
-                // Reset word objects for text elements - will be recreated
-                wordObjects: elementToCopy.properties.wordObjects
-                  ? []
-                  : undefined,
-              }
+              ...elementToCopy.properties,
+              // Generate new elementId for video/audio elements to avoid conflicts
+              elementId: elementToCopy.properties.elementId
+                ? `${elementToCopy.type}-${uuidv4()}`
+                : elementToCopy.properties.elementId,
+              // Reset word objects for text elements - will be recreated
+              wordObjects: elementToCopy.properties.wordObjects
+                ? []
+                : undefined,
+            }
             : undefined,
         };
 
@@ -11170,8 +11291,8 @@ export class Store {
 
       if (
         lineWidths[currentLine] +
-          wordWidth +
-          (lines[currentLine].length > 0 ? spaceWidth : 0) >
+        wordWidth +
+        (lines[currentLine].length > 0 ? spaceWidth : 0) >
         maxWidth
       ) {
         currentLine++;
@@ -11309,10 +11430,10 @@ export class Store {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
     return result
       ? {
-          r: parseInt(result[1], 16),
-          g: parseInt(result[2], 16),
-          b: parseInt(result[3], 16),
-        }
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16),
+      }
       : { r: 255, g: 215, b: 0 }; // Default to gold color
   }
 
@@ -11488,9 +11609,8 @@ export class Store {
       });
 
       // Also set the font string explicitly
-      const fontString = `${textObject.fontStyle || 'normal'} ${
-        textObject.fontWeight || 'normal'
-      } ${textObject.fontSize || 12}px ${textObject.fontFamily || 'Arial'}`;
+      const fontString = `${textObject.fontStyle || 'normal'} ${textObject.fontWeight || 'normal'
+        } ${textObject.fontSize || 12}px ${textObject.fontFamily || 'Arial'}`;
       wordObj.set('font', fontString);
 
       // Update parent properties for background
@@ -11619,9 +11739,8 @@ export class Store {
     });
 
     // Also set the font string explicitly
-    const fontString = `${parentObject.fontStyle || 'normal'} ${
-      parentObject.fontWeight || 'normal'
-    } ${parentObject.fontSize || 12}px ${parentObject.fontFamily || 'Arial'}`;
+    const fontString = `${parentObject.fontStyle || 'normal'} ${parentObject.fontWeight || 'normal'
+      } ${parentObject.fontSize || 12}px ${parentObject.fontFamily || 'Arial'}`;
     textObject.set('font', fontString);
 
     return textObject;
@@ -13803,6 +13922,110 @@ export class Store {
     this.ghostState.dragOverRowIndex = null;
 
     this.refreshElements?.();
+  });
+
+  splitElement = action((elementId, time) => {
+    const element = this.editorElements.find(el => el.id === elementId);
+    if (!element) return;
+
+    // Validate split time
+    if (time <= element.timeFrame.start || time >= element.timeFrame.end) {
+      console.warn('Split time is outside element timeframe');
+      return;
+    }
+
+    const originalEnd = element.timeFrame.end;
+    const splitDuration = time - element.timeFrame.start;
+
+    // Update first element (left side)
+    const updatedOriginal = {
+      ...element,
+      timeFrame: { ...element.timeFrame, end: time },
+    };
+
+    // Create second element (right side)
+    const newElement = {
+      ...element,
+      id: getUid(),
+      timeFrame: { start: time, end: originalEnd },
+      properties: { ...element.properties }, // Deep copy properties
+    };
+
+    // Adjust offsets for media files to maintain continuity
+    if (element.type === 'video') {
+      const currentOffset = element.properties.videoOffset || 0;
+      newElement.properties.videoOffset = currentOffset + splitDuration;
+    } else if (element.type === 'audio') {
+      const currentOffset = element.properties.audioOffset || 0;
+      newElement.properties.audioOffset = currentOffset + splitDuration;
+    }
+
+    this.updateEditorElement(updatedOriginal);
+    this.addEditorElement(newElement);
+
+    this.refreshElements();
+  });
+
+  addVideoWithAudio = action(async ({ url, title, duration, row, startTime }) => {
+    // Add video element
+    const videoElement = {
+      id: getUid(),
+      type: 'video',
+      timeFrame: {
+        start: startTime,
+        end: startTime + duration
+      },
+      row: row,
+      properties: {
+        src: url,
+        boxId: getUid(),
+        elementId: `video-${getUid()}`,
+        videoOffset: 0,
+        title: title || 'Video',
+      }
+    };
+    this.addEditorElement(videoElement);
+
+    // Add audio element
+    // Try to find a free row below the video
+    let audioRow = row + 1;
+    // You might want a better logic to find a free audio track row, 
+    // but for now let's just place it on the next row.
+
+    const audioElement = {
+      id: getUid(),
+      type: 'audio',
+      timeFrame: {
+        start: startTime,
+        end: startTime + duration
+      },
+      row: audioRow,
+      properties: {
+        src: url, // Use same URL for audio
+        elementId: `audio-${getUid()}`,
+        audioOffset: 0,
+        title: `${title || 'Video'} (Audio)`,
+        volume: 100,
+      }
+    };
+    this.addEditorElement(audioElement);
+
+    this.recalculateMaxRows();
+    this.refreshElements();
+  });
+
+
+  startFileGhostDrag = action((file, elementType, defaultDuration) => {
+    startFileGhostDragUtil(this, file, elementType, defaultDuration);
+  });
+
+  updateFileGhost = action((newPosition, rowIndex, isIncompatible) => {
+    updateFileGhostUtil(this, newPosition, rowIndex, isIncompatible);
+  });
+
+  finishFileGhostDrag = action((finalPosition, rowIndex, callback) => {
+    console.log('Store: finishFileGhostDrag called');
+    finishFileGhostDragUtil(this, finalPosition, rowIndex, callback);
   });
 }
 

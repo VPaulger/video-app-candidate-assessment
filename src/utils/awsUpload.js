@@ -4,9 +4,8 @@ import { uploadToS3 } from '../services/awsConfig';
 // Function to upload video to AWS S3
 export const uploadVideoToAWS = async (file, onProgress) => {
   try {
-const result = await uploadToS3(file, onProgress);
+    const result = await uploadToS3(file, onProgress);
     return result;
-    
   } catch (error) {
     console.error('Error uploading video:', error);
     throw error;

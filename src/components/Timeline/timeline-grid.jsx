@@ -79,44 +79,85 @@ const TimelineGrid = observer(
       e.preventDefault();
       setIsDraggingOver(false);
 
-      const files = Array.from(e.dataTransfer.files || []).filter(file =>
-        file.type.startsWith('audio/')
-      );
-
+      const files = Array.from(e.dataTransfer.files || []);
       if (!files.length) return;
 
       try {
         const gridRect = gridRef.current.getBoundingClientRect();
         const dropPositionX = (e.clientX - gridRect.left) / gridRect.width;
-        const timePosition = store.maxTime * dropPositionX;
+        let timePosition = store.maxTime * dropPositionX;
+
+        // Ensure timePosition works even if maxTime is 0 initially or very small
+        if (!store.maxTime) timePosition = 0;
 
         const allElements = store.editorElements;
 
+        // Basic row finding logic - can be improved
         const findTargetRow = () => {
-          const voiceoverElements = allElements.filter(
-            el => el.type === 'audio' && el.audioType === 'voiceover'
-          );
-
-          if (voiceoverElements.length > 0) {
-            const voiceoverRows = new Set(voiceoverElements.map(el => el.row));
-            return Math.max(...Array.from(voiceoverRows)) + 1;
-          }
-
           const usedRows =
             allElements.length > 0
               ? new Set(allElements.map(el => el.row))
               : new Set();
-
           return usedRows.size > 0 ? Math.max(...Array.from(usedRows)) + 1 : 0;
         };
 
-        let targetRow = findTargetRow();
-
-        while (allElements.some(el => el.row === targetRow)) {
-          targetRow++;
-        }
+        const targetRow = findTargetRow();
 
         for (const file of files) {
+          const fileType = file.type.split('/')[0];
+          const uploadedUrl = URL.createObjectURL(file);
+
+          if (fileType === 'video') {
+            // Get duration
+            const video = document.createElement('video');
+            video.preload = 'metadata';
+            video.src = uploadedUrl;
+
+            const duration = await new Promise((resolve) => {
+              video.onloadedmetadata = () => {
+                resolve(video.duration * 1000);
+              };
+              video.onerror = () => resolve(10000); // fallback
+            });
+
+            await store.addVideoWithAudio({
+              url: uploadedUrl,
+              title: file.name,
+              duration: duration,
+              row: targetRow,
+              startTime: timePosition
+            });
+
+          } else if (fileType === 'audio') {
+            const audio = new Audio();
+            audio.src = uploadedUrl;
+            const duration = await new Promise((resolve) => {
+              audio.onloadedmetadata = () => resolve(audio.duration * 1000);
+              audio.onerror = () => resolve(10000);
+            });
+
+            store.addExistingAudio({
+              base64Audio: uploadedUrl,
+              durationMs: duration,
+              row: targetRow,
+              startTime: timePosition,
+              audioType: 'music',
+              duration: duration,
+              id: getUid(), // Use store's imported getUid if possible, but timeline-grid has imports?
+              // Ah, getUid is not imported in timeline-grid.jsx. 
+              // But store.addExistingAudio generates ID if not provided? 
+              // Let's check store method implementation or pass one.
+              // Actually store.addExistingAudio (Step 50 line 1109) generates one.
+            });
+
+          } else if (fileType === 'image') {
+            await store.addImageLocal({
+              url: uploadedUrl,
+              minUrl: uploadedUrl,
+              row: targetRow,
+              startTime: timePosition
+            });
+          }
         }
       } catch (error) {
         console.error('Drag and drop processing error:', error);

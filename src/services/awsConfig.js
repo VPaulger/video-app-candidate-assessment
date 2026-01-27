@@ -25,7 +25,7 @@ const generateUniqueFileName = (originalName) => {
 // Direct upload to S3
 export const uploadToS3 = async (file, onProgress) => {
   const fileName = generateUniqueFileName(file.name);
-  
+
   const params = {
     Bucket: BUCKET_NAME,
     Key: fileName,
@@ -36,7 +36,7 @@ export const uploadToS3 = async (file, onProgress) => {
 
   try {
     const upload = s3.upload(params);
-    
+
     // Handle upload progress
     if (onProgress) {
       upload.on('httpUploadProgress', (progress) => {
@@ -51,7 +51,7 @@ export const uploadToS3 = async (file, onProgress) => {
       key: result.Key
     };
   } catch (error) {
-console.error('Error uploading to S3:', error);
+    console.error('Error uploading to S3:', error);
     throw error;
   }
 };
@@ -59,7 +59,7 @@ console.error('Error uploading to S3:', error);
 // Get pre-signed URL for client-side upload
 export const getSignedUploadUrl = async (fileName, fileType) => {
   const key = generateUniqueFileName(fileName);
-  
+
   const params = {
     Bucket: BUCKET_NAME,
     Key: key,
@@ -75,7 +75,7 @@ export const getSignedUploadUrl = async (fileName, fileType) => {
       fileKey: key,
     };
   } catch (error) {
-console.error('Error generating signed URL:', error);
+    console.error('Error generating signed URL:', error);
     throw error;
   }
 };

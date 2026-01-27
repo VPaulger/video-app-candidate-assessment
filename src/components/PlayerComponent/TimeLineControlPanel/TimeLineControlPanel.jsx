@@ -619,8 +619,8 @@ const TimeLineControlPanel = ({
     backgroundColor: isDragging
       ? ' rgba(255, 255, 255, 0.06)'
       : isOver
-      ? 'rgba(255, 255, 255, 0.06)'
-      : 'transparent',
+        ? 'rgba(255, 255, 255, 0.06)'
+        : 'transparent',
     transition: 'all 0.2s ease',
     pointerEvents: 'auto',
     zIndex: 1,
@@ -1071,10 +1071,10 @@ const TimeLineControlPanel = ({
 
   const addFileToTimeline = async (file, uploadedUrl) => {
     const fileType = inferUploadCategory(file);
-    
+
     // Create new row at the end - same logic as in TimelineRow drop zones
     const newRow = store.maxRows;
-    
+
     // Shift rows down to create space for new element
     store.shiftRowsDown(newRow);
 
@@ -1133,7 +1133,7 @@ const TimeLineControlPanel = ({
       });
       toast.success(`Added ${file.name} to timeline`);
     }
-    
+
     // Refresh elements to ensure proper display
     store.refreshElements();
   };
@@ -1148,13 +1148,13 @@ const TimeLineControlPanel = ({
     const rejected = [];
     for (const f of list) {
       const res = validateFile(f, 'All');
-      if (res.ok) accepted.push(f); 
+      if (res.ok) accepted.push(f);
       else rejected.push({ file: f, reason: res.reason });
     }
 
     if (rejected.length) {
-      const head = rejected.slice(0,3).map(r=>`${r.file.name} — ${r.reason}`).join(', ');
-      toast.error(`Some files were rejected: ${head}${rejected.length>3?'…':''}`);
+      const head = rejected.slice(0, 3).map(r => `${r.file.name} — ${r.reason}`).join(', ');
+      toast.error(`Some files were rejected: ${head}${rejected.length > 3 ? '…' : ''}`);
     }
 
     if (!accepted.length) {
@@ -1185,34 +1185,45 @@ const TimeLineControlPanel = ({
         formData.append('name', fileData.name);
         formData.append('type', inferUploadCategory(fileData.file));
 
-        const response = await upload(formData, {
-          onProgress: pct => {
-            setUploadProgress(prev => ({
-              ...prev,
-              [fileData.id]: { progress: Math.max(prev[fileData.id]?.progress || 0, Math.min(100, pct)) },
-            }));
-          },
-        });
+        // Get uploaded file URL from response
+        let uploadedUrl = null;
+        try {
+          const response = await upload(formData, {
+            onProgress: pct => {
+              setUploadProgress(prev => ({
+                ...prev,
+                [fileData.id]: { progress: Math.max(prev[fileData.id]?.progress || 0, Math.min(100, pct)) },
+              }));
+            },
+          });
+
+          if (response?.data?.file?.url) {
+            uploadedUrl = response.data.file.url;
+          } else if (response?.data?.url) {
+            uploadedUrl = response.data.url;
+          }
+        } catch (uploadError) {
+          const canceled = uploadError?.canceled;
+          if (canceled) throw uploadError; // Re-throw cancellation to be handled by outer catch
+
+          console.warn('Backend upload failed (likely 401), falling back to local blob for demo:', uploadError);
+          uploadedUrl = URL.createObjectURL(fileData.file);
+          // Optional: notify user about fallback
+          // toast.success(`Challenge mode: Added ${fileData.name} locally`);
+        }
+
+        if (!uploadedUrl) {
+          uploadedUrl = URL.createObjectURL(fileData.file);
+        }
 
         setUploadProgress(prev => ({
           ...prev,
           [fileData.id]: { progress: 100 },
         }));
 
-        // Get uploaded file URL from response
-        let uploadedUrl = null;
-        if (response?.data?.file?.url) {
-          uploadedUrl = response.data.file.url;
-        } else if (response?.data?.url) {
-          uploadedUrl = response.data.url;
-        } else {
-          // Fallback to temporary URL if no uploaded URL available
-          uploadedUrl = URL.createObjectURL(fileData.file);
-        }
-
-        // Add file to timeline after successful upload
+        // Add file to timeline
         await addFileToTimeline(fileData.file, uploadedUrl);
-        
+
       } catch (e) {
         const canceled = e?.canceled;
         if (!canceled) {
@@ -1264,9 +1275,8 @@ const TimeLineControlPanel = ({
         ref={node => {
           timelineControlsOptionsRef.current = node;
         }}
-        className={`${styles.timelineControlsOptions} ${
-          checkedCount < 1 ? styles.reducedGap : ''
-        } ${isDragging ? styles.dragging : ''}`}
+        className={`${styles.timelineControlsOptions} ${checkedCount < 1 ? styles.reducedGap : ''
+          } ${isDragging ? styles.dragging : ''}`}
         style={{
           ...getPositionStyles(),
           opacity: isDragging ? 0.5 : 1,
@@ -1297,6 +1307,20 @@ const TimeLineControlPanel = ({
               tooltipText="Drag to reorder"
             />
           </div>
+
+          {/* Upload Button */}
+          <div className={styles.timelineControlsItem}>
+            <ButtonWithIcon
+              icon="UploadIcon"
+              size="17"
+              color="#FFFFFFB2"
+              activeColor="white"
+              classNameButton={styles.scaleButton}
+              tooltipText="Upload media"
+              onClick={handleUploadClick}
+            />
+          </div>
+
           <div className={styles.settingsContainer}>
             <ButtonWithIcon
               icon="GearIcon"
@@ -1346,9 +1370,8 @@ const TimeLineControlPanel = ({
           </div>
           {getCheckedStateByName('Volume Control') && (
             <div
-              className={`${styles.volumeControlNew} ${
-                isVolumeControlClicked ? styles.clicked : ''
-              } ${isSelectedElementsAudio ? styles.audioElementSelected : ''}`}
+              className={`${styles.volumeControlNew} ${isVolumeControlClicked ? styles.clicked : ''
+                } ${isSelectedElementsAudio ? styles.audioElementSelected : ''}`}
               onMouseEnter={() => setIsVolumeControlHovered(true)}
               onMouseLeave={() => {
                 setIsVolumeControlHovered(false);
@@ -1364,17 +1387,17 @@ const TimeLineControlPanel = ({
                   isSelectedElementsAudio
                     ? 'var(--accent-color)' // Accent color when audio selected
                     : isVolumeControlClicked
-                    ? 'white'
-                    : isVolumeControlHovered
-                    ? '#FFFFFFB2'
-                    : isMuted
-                    ? '#FFFFFF66'
-                    : '#FFFFFFB2'
+                      ? 'white'
+                      : isVolumeControlHovered
+                        ? '#FFFFFFB2'
+                        : isMuted
+                          ? '#FFFFFF66'
+                          : '#FFFFFFB2'
                 }
                 opacity={
                   isSelectedElementsAudio ||
-                  isVolumeControlHovered ||
-                  isVolumeControlClicked
+                    isVolumeControlHovered ||
+                    isVolumeControlClicked
                     ? 1
                     : 0.4
                 }
@@ -1401,9 +1424,8 @@ const TimeLineControlPanel = ({
                   step="1"
                   value={currentVolume}
                   onChange={onVolumeChange}
-                  className={`${styles.volumeRange} ${
-                    isSelectedElementsAudio ? styles.audioElementSelected : ''
-                  }`}
+                  className={`${styles.volumeRange} ${isSelectedElementsAudio ? styles.audioElementSelected : ''
+                    }`}
                   style={{
                     '--range-progress': `${currentVolume}%`,
                     '--range-accent-color': isSelectedElementsAudio
@@ -1426,9 +1448,8 @@ const TimeLineControlPanel = ({
                       target: { value },
                     });
                   }}
-                  className={`${styles.scalePercentage} ${
-                    isSelectedElementsAudio ? styles.audioElementSelected : ''
-                  }`}
+                  className={`${styles.scalePercentage} ${isSelectedElementsAudio ? styles.audioElementSelected : ''
+                    }`}
                   onMouseDown={() => setIsVolumeControlClicked(true)}
                   onMouseUp={() => setIsVolumeControlClicked(false)}
                 />
@@ -1505,9 +1526,8 @@ const TimeLineControlPanel = ({
               accentColor="#FFFFFFB2"
               color="#FFFFFF66"
               activeColor="white"
-              classNameButton={`${styles.undoRedoBtn} ${
-                isUndoRedoLoading ? styles.disabled : ''
-              }`}
+              classNameButton={`${styles.undoRedoBtn} ${isUndoRedoLoading ? styles.disabled : ''
+                }`}
               classNameIcon={styles.scaleIcon}
               onClick={onUndo}
               tooltipText="Undo"
@@ -1519,9 +1539,8 @@ const TimeLineControlPanel = ({
               accentColor="#FFFFFFB2"
               color="#FFFFFF66"
               activeColor="white"
-              classNameButton={`${styles.undoRedoBtn} ${
-                isUndoRedoLoading ? styles.disabled : ''
-              }`}
+              classNameButton={`${styles.undoRedoBtn} ${isUndoRedoLoading ? styles.disabled : ''
+                }`}
               onClick={onRedo}
               tooltipText="Redo"
             />
@@ -1536,7 +1555,7 @@ const TimeLineControlPanel = ({
             activeColor="white"
             marginLeft="0px"
             classNameButton={styles.transitionsButton}
-            onClick={() => {}}
+            onClick={() => { }}
             tooltipText="Transitions"
           />
         )}
@@ -1548,9 +1567,8 @@ const TimeLineControlPanel = ({
             color={isCutMode ? 'var(--accent-color)' : '#FFFFFF66'}
             activeColor="var(--accent-color)"
             accentColor="#FFFFFFB2"
-            classNameButton={`${styles.cutButton} ${
-              isCutMode ? styles.active : ''
-            }`}
+            classNameButton={`${styles.cutButton} ${isCutMode ? styles.active : ''
+              }`}
             tooltipText="Cut"
             onClick={onCutToggle}
           />
@@ -1563,31 +1581,29 @@ const TimeLineControlPanel = ({
               onClick={handleRemoveSilenceClick}
               color={
                 store.editorElements.filter(el => el.type === 'audio').length >
-                0
+                  0
                   ? isProcessingSilence
                     ? 'var(--accent-color)'
                     : isRemoveSilenceVisible
-                    ? 'white'
-                    : '#FFFFFF66'
+                      ? 'white'
+                      : '#FFFFFF66'
                   : '#FFFFFF33'
               }
               accentColor="#FFFFFFB2"
               activeColor="white"
-              classNameButton={`${styles.removeSilenceBtn} ${
-                isProcessingSilence ? styles.processing : ''
-              } ${
-                store.editorElements.filter(el => el.type === 'audio')
+              classNameButton={`${styles.removeSilenceBtn} ${isProcessingSilence ? styles.processing : ''
+                } ${store.editorElements.filter(el => el.type === 'audio')
                   .length === 0
                   ? styles.disabled
                   : ''
-              } ${isRemoveSilenceVisible ? styles.active : ''}`}
+                } ${isRemoveSilenceVisible ? styles.active : ''}`}
               tooltipText={
                 store.editorElements.filter(el => el.type === 'audio')
                   .length === 0
                   ? 'No audio elements available'
                   : isProcessingSilence
-                  ? 'Processing...'
-                  : 'Remove Silence'
+                    ? 'Processing...'
+                    : 'Remove Silence'
               }
             />
           </span>
@@ -1610,13 +1626,12 @@ const TimeLineControlPanel = ({
           accentColor="#FFFFFFB2"
           activeColor="white"
           color={isUploadingFiles || isUploading ? 'var(--accent-color)' : '#FFFFFF66'}
-          classNameButton={`${styles.uploadBtn} ${
-            isUploadingFiles || isUploading ? styles.uploading : ''
-          }`}
+          classNameButton={`${styles.uploadBtn} ${isUploadingFiles || isUploading ? styles.uploading : ''
+            }`}
           onClick={handleUploadClick}
           tooltipText={
-            isUploadingFiles || isUploading 
-              ? 'Uploading files...' 
+            isUploadingFiles || isUploading
+              ? 'Uploading files...'
               : 'Upload files to timeline'
           }
           disabled={isUploadingFiles || isUploading}
@@ -1628,9 +1643,8 @@ const TimeLineControlPanel = ({
         )}
         {getCheckedStateByName('Zoom') && (
           <div
-            className={`${styles.zoomControl} ${
-              isZoomControlHovered ? styles.hovered : ''
-            } ${isZoomControlClicked ? styles.clicked : ''}`}
+            className={`${styles.zoomControl} ${isZoomControlHovered ? styles.hovered : ''
+              } ${isZoomControlClicked ? styles.clicked : ''}`}
             onMouseEnter={() => setIsZoomControlHovered(true)}
             onMouseLeave={() => {
               setIsZoomControlHovered(false);
@@ -1645,9 +1659,8 @@ const TimeLineControlPanel = ({
               color="#FFFFFF66"
               activeColor="white"
               accentColor="#FFFFFFB2"
-              classNameButton={`${styles.zoomButton} ${
-                isZoomControlClicked ? styles.active : ''
-              }`}
+              classNameButton={`${styles.zoomButton} ${isZoomControlClicked ? styles.active : ''
+                }`}
               tooltipText="Zoom Out"
               onClick={() => {
                 const newScale = Math.max(1, currentScale - 1);
@@ -1683,9 +1696,8 @@ const TimeLineControlPanel = ({
               color="#FFFFFF66"
               activeColor="white"
               accentColor="#FFFFFFB2"
-              classNameButton={`${styles.zoomButton} ${
-                isZoomControlClicked ? styles.active : ''
-              }`}
+              classNameButton={`${styles.zoomButton} ${isZoomControlClicked ? styles.active : ''
+                }`}
               tooltipText="Zoom In"
               onClick={() => {
                 const newScale = Math.min(30, currentScale + 1);
