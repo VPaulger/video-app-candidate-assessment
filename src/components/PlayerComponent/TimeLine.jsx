@@ -1384,7 +1384,6 @@ export const TimeLine = observer(
         }`}
         data-timeline
         onClick={handleTimelineClick}
-        style={{ minHeight: '183px' }}
         data-interactive={true}
       >
         {/* Timeline Loading Overlay via Portal - only during initialization */}

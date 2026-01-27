@@ -17,7 +17,6 @@
     flex: 1;
     flex-direction: column;
     padding-top: 66px;
-    padding-bottom: 183px;
     overflow: hidden;
     position: relative;
     z-index: 0;
@@ -127,8 +126,8 @@
         .video_panel_container {
           display: flex;
           position: relative;
-          justify-content: start;
-          align-items: start;
+          justify-content: center;
+          align-items: center;
           height: 100%;
         }
       }
@@ -792,10 +791,15 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: start;
-  align-items: start;
+  justify-content: center;
+  align-items: center;
   min-height: 400px;
   width: 100%;
+}
+
+// Timeline Rnd container - allow content to overflow
+:global(.timeline-rnd) {
+  overflow: visible !important;
 }
 
 // Frame editing panel positioning - now uses CSS Flexbox
