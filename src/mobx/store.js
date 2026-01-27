@@ -13804,6 +13804,154 @@ export class Store {
 
     this.refreshElements?.();
   });
+
+  // Split a video element into two clips at the specified time point
+  splitVideoElement = action((element, splitPoint) => {
+    if (!element || element.type !== 'video') {
+      console.error('Invalid element for video split');
+      return;
+    }
+
+    if (splitPoint <= element.timeFrame.start || splitPoint >= element.timeFrame.end) {
+      console.warn('Split point must be within element timeframe');
+      return;
+    }
+
+    const originalEndTime = element.timeFrame.end;
+    const originalVideoOffset = element.properties?.videoOffset || 0;
+    const firstClipDuration = splitPoint - element.timeFrame.start;
+
+    element.timeFrame = {
+      start: element.timeFrame.start,
+      end: splitPoint,
+    };
+
+    // Create second clip with correct timing and offset
+    const { fabricObject, ...elementWithoutFabric } = element;
+    const secondClip = {
+      ...elementWithoutFabric,
+      id: getUid(),
+      fabricObject: null,
+      timeFrame: {
+        start: splitPoint,
+        end: originalEndTime,
+      },
+      properties: {
+        ...element.properties,
+        videoOffset: originalVideoOffset + firstClipDuration,
+      },
+    };
+
+    this.addEditorElement(secondClip);
+
+    if (secondClip.timeFrame.end > this.maxTime) {
+      this.maxTime = secondClip.timeFrame.end;
+    }
+
+    this.refreshElements();
+
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+  });
+
+  // Split an audio element into two clips at the specified time point
+  splitAudioElement = action((element, splitPoint) => {
+    if (!element || element.type !== 'audio') {
+      console.error('Invalid element for audio split');
+      return;
+    }
+
+    if (splitPoint <= element.timeFrame.start || splitPoint >= element.timeFrame.end) {
+      console.warn('Split point must be within element timeframe');
+      return;
+    }
+
+    const originalEndTime = element.timeFrame.end;
+    const originalAudioOffset = element.properties?.audioOffset || 0;
+    const firstClipDuration = splitPoint - element.timeFrame.start;
+
+    element.timeFrame = {
+      start: element.timeFrame.start,
+      end: splitPoint,
+    };
+
+    // Create the second clip
+    const { fabricObject, ...elementWithoutFabric } = element;
+    const secondClip = {
+      ...elementWithoutFabric,
+      id: getUid(),
+      fabricObject: null,
+      timeFrame: {
+        start: splitPoint,
+        end: originalEndTime,
+      },
+      properties: {
+        ...element.properties,
+        audioOffset: originalAudioOffset + firstClipDuration,
+        elementId: `audio-${getUid()}`,
+      },
+    };
+
+    this.addEditorElement(secondClip);
+
+    if (secondClip.timeFrame.end > this.maxTime) {
+      this.maxTime = secondClip.timeFrame.end;
+    }
+
+    this.refreshElements();
+
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+  });
+
+  // Split an image element into two display clips at the specified time point
+  splitImageElement = action((element, splitPoint) => {
+    if (!element || (element.type !== 'imageUrl' && element.type !== 'image')) {
+      console.error('Invalid element for image split');
+      return;
+    }
+
+    if (splitPoint <= element.timeFrame.start || splitPoint >= element.timeFrame.end) {
+      console.warn('Split point must be within element timeframe');
+      return;
+    }
+
+    const originalEndTime = element.timeFrame.end;
+
+    element.timeFrame = {
+      start: element.timeFrame.start,
+      end: splitPoint,
+    };
+
+    // Create the second clip with same visual properties
+    const { fabricObject, ...elementWithoutFabric } = element;
+    const secondClip = {
+      ...elementWithoutFabric,
+      id: getUid(),
+      fabricObject: null,
+      timeFrame: {
+        start: splitPoint,
+        end: originalEndTime,
+      },
+      properties: {
+        ...element.properties,
+      },
+    };
+
+    this.addEditorElement(secondClip, element.type === 'imageUrl');
+
+    if (secondClip.timeFrame.end > this.maxTime) {
+      this.maxTime = secondClip.timeFrame.end;
+    }
+
+    this.refreshElements();
+
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+  });
 }
 
 export function isEditorAudioElement(element) {
