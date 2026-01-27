@@ -1096,8 +1096,23 @@ export const TimeLine = observer(
         // and not on any timeline items or controls
         const isTimelineItem = e.target.closest('[data-timeline-item]');
         const isTimelineControl = e.target.closest('[data-timeline-control]');
+
+        if (isCutMode && isTimelineItem) {
+          // Get the element ID from the timeline item
+          const overlayElement = e.target.closest('[data-overlay-id]');
+          if (overlayElement) {
+            const elementId = overlayElement.getAttribute('data-overlay-id');
+            if (elementId) {
+              // Cut the element at the current playhead position
+              store.cutElement(elementId);
+              // Exit cut mode
+              setIsCutMode(false);
+              e.stopPropagation();
+            }
+          }
+        }
       },
-      [store, dispatch]
+      [store, dispatch, isCutMode, setIsCutMode]
     );
 
     const handleCutClick = () => {
@@ -1430,8 +1445,8 @@ export const TimeLine = observer(
                 store.playing
                   ? 'PauseIcon'
                   : store.currentTimeInMs >= store.lastElementEnd - 15
-                  ? 'RestartIcon'
-                  : 'PlayIcon'
+                    ? 'RestartIcon'
+                    : 'PlayIcon'
               }
               onClick={() => {
                 handlePlaybackClick();
