@@ -1961,7 +1961,9 @@ const TimelineItem = observer(
             zIndex: 10,
             // Don't apply live push offset during dragging - only show final result
             transform: 'none',
-            transition: 'transform 0.2s ease-out',
+            // Disable transitions during drag for smoother movement
+            transition: store.ghostState.isDragging ? 'none' : 'transform 0.2s ease-out',
+            willChange: store.ghostState.isDragging ? 'transform, left, width' : 'auto',
           }}
           onMouseMove={handleMouseMove}
           onMouseLeave={() => {

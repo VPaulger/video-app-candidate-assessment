@@ -6,15 +6,16 @@ import DonePoossitiveIcon from 'components/Icons/DonePoossitiveIcon';
 import InfoNeutralIcon from 'components/Icons/InfoNeutralIcon';
 import CloseIcon from 'components/Icons/CloseIcon';
 
-const ErrorNotification = ({ 
-  message, 
+const ErrorNotification = ({
+  message,
   description = '',
   type = 'info-negative',
-  onClose, 
+  onClose,
   className = '',
   showCloseButton = true,
-  duration = 3000,
-  onOutsideClick = true
+  duration = 5000,
+  onOutsideClick = true,
+  index = 0
 }) => {
   const [isVisible, setIsVisible] = useState(true);
   const [isClosing, setIsClosing] = useState(false);
@@ -63,9 +64,10 @@ const ErrorNotification = ({
   };
 
   return (
-    <div 
+    <div
       className={`error-notification ${className} ${isClosing ? 'error-notification--closing' : ''}`}
       onClick={handleOutsideClick}
+      style={{ top: `${20 + index * 78}px` }}
     >
       <div className="error-notification__indicator"></div>
       <div className="error-notification__right-indicator">

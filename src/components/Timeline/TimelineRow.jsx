@@ -4,6 +4,7 @@ import React, {
   useRef,
   useCallback,
   useMemo,
+  useLayoutEffect,
 } from 'react';
 import TimelineItem from './timeline-item';
 import AnimationItem from './AnimationItem';
@@ -140,7 +141,11 @@ const TimelineRow = observer(
       draggedElementId: null,
     });
 
-    const handleHover = useCallback(
+    // Throttling refs for smooth drag performance
+    const rafRef = useRef(null);
+    const lastHoverArgsRef = useRef(null);
+
+    const handleHoverInternal = useCallback(
       (draggedItem, monitor) => {
         const hoverBoundingRect = dropRef.current?.getBoundingClientRect();
         const clientOffset = monitor.getClientOffset();
@@ -513,6 +518,37 @@ const TimelineRow = observer(
       ]
     );
 
+    // Throttled hover handler using requestAnimationFrame for smooth dragging
+    const handleHover = useCallback(
+      (draggedItem, monitor) => {
+        // Store the latest args
+        lastHoverArgsRef.current = { draggedItem, monitor };
+
+        // If RAF is already scheduled, skip
+        if (rafRef.current) return;
+
+        rafRef.current = requestAnimationFrame(() => {
+          rafRef.current = null;
+          if (lastHoverArgsRef.current) {
+            handleHoverInternal(
+              lastHoverArgsRef.current.draggedItem,
+              lastHoverArgsRef.current.monitor
+            );
+          }
+        });
+      },
+      [handleHoverInternal]
+    );
+
+    // Cleanup RAF on unmount
+    useEffect(() => {
+      return () => {
+        if (rafRef.current) {
+          cancelAnimationFrame(rafRef.current);
+        }
+      };
+    }, []);
+
     const getAudioLengthFromUrl = async url => {
       return new Promise((resolve, reject) => {
         const audio = new Audio();
@@ -576,6 +612,8 @@ const TimelineRow = observer(
             // Handle single ghost drop
             if (store.ghostState.isDragging) {
               const draggedElement = store.ghostState.draggedElement;
+              if (!draggedElement) return;
+
               const rowType = overlays[0]?.type;
 
               // Check if element type is compatible with target row
@@ -864,11 +902,7 @@ const TimelineRow = observer(
                       }
                     }
                   } catch (e) {
-                    handleCatchError(
-                      e,
-                      'Auto-select effect video failed',
-                      false
-                    );
+                    showError('Auto-select effect video failed', e.message);
                   }
                 }
               );
@@ -1363,7 +1397,7 @@ const TimelineRow = observer(
             });
           }
         } catch (error) {
-          handleCatchError(error, 'Failed to upload image');
+          showError('Failed to upload image', error.message);
         }
       } else if (file.type.startsWith('video/')) {
         try {
@@ -1410,7 +1444,7 @@ const TimelineRow = observer(
             isNeedLoader: false,
           });
         } catch (error) {
-          handleCatchError(error, 'Failed to upload video');
+          showError('Failed to upload video', error.message);
         }
       }
     };
@@ -1530,7 +1564,7 @@ const TimelineRow = observer(
               }
             }
           } catch (error) {
-            handleCatchError(error, 'Failed to upload image');
+            showError('Failed to upload image', error.message);
           }
         } else if (file.type.startsWith('video/')) {
         }
@@ -1932,7 +1966,6 @@ const TimelineRow = observer(
                     }
                   } catch (error) {
                     showError('Failed to upload image', error.message);
-                    handleCatchError(error, 'Failed to upload image');
                   } finally {
                     setIsUploading(false);
                   }
@@ -1990,7 +2023,6 @@ const TimelineRow = observer(
                     showDonePositive('Video uploaded successfully');
                   } catch (error) {
                     showError('Failed to upload video', error.message);
-                    handleCatchError(error, 'Failed to upload video');
                   } finally {
                     setIsUploading(false);
                   }
@@ -2332,7 +2364,6 @@ const TimelineRow = observer(
                   }
                 } catch (error) {
                   showError('Failed to upload image', error.message);
-                  handleCatchError(error, 'Failed to upload image');
                 } finally {
                   setIsUploading(false);
                 }
@@ -2388,7 +2419,6 @@ const TimelineRow = observer(
                   showDonePositive('Video uploaded successfully');
                 } catch (error) {
                   showError('Failed to upload video', error.message);
-                  handleCatchError(error, 'Failed to upload video');
                 } finally {
                   setIsUploading(false);
                 }

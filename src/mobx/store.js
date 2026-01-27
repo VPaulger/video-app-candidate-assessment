@@ -710,6 +710,7 @@ export class Store {
       initialClickOffset: 0, // store initial click offset within element
       initialClientX: null, // store initial mouse X coordinate
       initialElementStart: 0, // store initial element start position
+      initialElementEnd: 0, // store initial element end position (for resize)
       // Resize ghost state
       isResizing: false,
       resizeType: null, // 'start' | 'end'
@@ -8183,7 +8184,17 @@ export class Store {
   }
 
   setEditorElements(editorElements) {
-    this.editorElements = editorElements;
+    // Deduplicate elements by ID, keeping the first occurrence
+    const seenIds = new Set();
+    const uniqueElements = editorElements.filter(el => {
+      if (seenIds.has(el.id)) {
+        console.warn(`Duplicate element ID ${el.id} detected, removing duplicate.`);
+        return false;
+      }
+      seenIds.add(el.id);
+      return true;
+    });
+    this.editorElements = uniqueElements;
     this.updateSelectedElement();
     this.refreshElements();
     if (!this.isInitializing && !this.isUndoRedoOperation) {
@@ -9430,6 +9441,17 @@ export class Store {
   }
 
   addEditorElement(editorElement, isImageUrl = false) {
+    // Prevent adding elements with duplicate IDs
+    const existingElement = this.editorElements.find(
+      el => el.id === editorElement.id
+    );
+    if (existingElement) {
+      console.warn(
+        `Element with ID ${editorElement.id} already exists, skipping duplicate.`
+      );
+      return;
+    }
+
     // Create audio element first if it's an audio type
     if (editorElement.type === 'audio') {
       // Remove existing audio element if it exists
@@ -14654,6 +14676,39 @@ export class Store {
     this.ghostState.dragMode = 'multi';
   });
 
+  startResizeGhost = action((element, resizeType, clickOffset = 0) => {
+    this.ghostState.isResizing = true;
+    this.ghostState.resizeType = resizeType;
+    this.ghostState.resizeGhostElement = {
+      ...element,
+      left: (element.timeFrame.start / this.maxTime) * 100,
+      width: ((element.timeFrame.end - element.timeFrame.start) / this.maxTime) * 100,
+      row: element.row,
+      elementType: element.type,
+    };
+    this.ghostState.clickOffset = clickOffset;
+    this.ghostState.initialElementStart = element.timeFrame.start;
+    this.ghostState.initialElementEnd = element.timeFrame.end;
+  });
+
+  updateResizeGhost = action((newStart, newEnd, canPush = true) => {
+    if (!this.ghostState.isResizing || !this.ghostState.resizeGhostElement) return;
+
+    this.ghostState.resizeGhostElement = {
+      ...this.ghostState.resizeGhostElement,
+      left: (newStart / this.maxTime) * 100,
+      width: ((newEnd - newStart) / this.maxTime) * 100,
+      canPush,
+    };
+  });
+
+  finishResizeGhost = action(() => {
+    this.ghostState.isResizing = false;
+    this.ghostState.resizeType = null;
+    this.ghostState.resizeGhostElement = null;
+    this.ghostState.initialElementEnd = null;
+  });
+
   resetGhostState = action(() => {
     this.ghostState.isDragging = false;
     this.ghostState.ghostElement = null;
@@ -14667,6 +14722,11 @@ export class Store {
     this.ghostState.fileTargetRow = null;
     this.ghostState.isGalleryDragging = false;
     this.ghostState.galleryGhostElement = null;
+    // Reset resize ghost state
+    this.ghostState.isResizing = false;
+    this.ghostState.resizeType = null;
+    this.ghostState.resizeGhostElement = null;
+    this.ghostState.initialElementEnd = null;
   });
 
   updateGalleryGhost = action((position, rowIndex, isIncompatible = false) => {
