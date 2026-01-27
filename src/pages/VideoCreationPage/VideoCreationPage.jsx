@@ -2720,6 +2720,27 @@ function VideoCreationPage() {
     }
   }, [timelineHeight]);
 
+  // Dynamically adjust timeline height based on number of rows
+  const maxRows = store?.maxRows || 2;
+  const elementsCount = store?.editorElements?.length || 0;
+
+  useEffect(() => {
+    const ROW_HEIGHT = 44;
+    const CONTROLS_HEIGHT = 70;
+    const MIN_HEIGHT = 120;
+    const MAX_HEIGHT = Math.floor(window.innerHeight * 0.5);
+
+    const calculatedHeight = CONTROLS_HEIGHT + maxRows * ROW_HEIGHT;
+    const newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, calculatedHeight));
+
+    setTimelineHeight(prevHeight => {
+      if (prevHeight !== newHeight) {
+        return newHeight;
+      }
+      return prevHeight;
+    });
+  }, [maxRows, elementsCount]);
+
   const [isLyraVisible, setIsLyraVisible] = useState(false);
 
   const handleLyraClick = () => {
@@ -3226,8 +3247,9 @@ function VideoCreationPage() {
                 width: '100%',
                 height: timelineHeight,
               }}
-              minHeight={74}
-              maxHeight={320}
+              size={{ width: '100%', height: timelineHeight }}
+              minHeight={120}
+              maxHeight={Math.floor(window.innerHeight * 0.5)}
               enableResizing={{ top: true }}
               disableDragging={true}
               bounds="parent"

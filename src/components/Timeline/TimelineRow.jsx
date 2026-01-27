@@ -24,6 +24,7 @@ import { uploadVideoToAWS } from '../../utils/awsUpload';
 import { saveVideoData } from '../../utils/saveVideoMetadata';
 import { user as selectUser } from '../../redux/auth/selectors';
 import { Resizable } from 'react-resizable';
+import { useError } from '../../contexts/ErrorContext';
 
 // Helper function to check if element types are compatible for mixing on same row
 const areTypesCompatible = (type1, type2) => {
@@ -71,9 +72,11 @@ const TimelineRow = observer(
       useState(false);
     const [isDraggingTimelineElement, setIsDraggingTimelineElement] =
       useState(false);
+    const [isUploading, setIsUploading] = useState(false);
 
     const dispatch = useDispatch();
     const dragDropManager = useDragDropManager();
+    const { showInfoNeutral, showDonePositive, showError } = useError();
 
     // Optimized row height management
     const rowType = overlays[0]?.type;
@@ -1905,8 +1908,13 @@ const TimelineRow = observer(
                 const file = files[0];
 
                 if (file.type.startsWith('audio/')) {
+                  showInfoNeutral('Uploading audio...', file.name);
+                  // Audio upload handling would go here
                 } else if (file.type.startsWith('image/')) {
                   try {
+                    setIsUploading(true);
+                    showInfoNeutral('Uploading image...', file.name);
+
                     const formData = new FormData();
                     formData.append('image', file);
 
@@ -1920,12 +1928,19 @@ const TimelineRow = observer(
                         row: 0,
                         startTime: 0,
                       });
+                      showDonePositive('Image uploaded successfully');
                     }
                   } catch (error) {
+                    showError('Failed to upload image', error.message);
                     handleCatchError(error, 'Failed to upload image');
+                  } finally {
+                    setIsUploading(false);
                   }
                 } else if (file.type.startsWith('video/')) {
                   try {
+                    setIsUploading(true);
+                    showInfoNeutral('Uploading video...', file.name);
+
                     // Handle video locally for immediate preview
                     await store.handleVideoUpload(file);
 
@@ -1971,9 +1986,16 @@ const TimelineRow = observer(
                       startTime: 0,
                       isNeedLoader: false,
                     });
+
+                    showDonePositive('Video uploaded successfully');
                   } catch (error) {
+                    showError('Failed to upload video', error.message);
                     handleCatchError(error, 'Failed to upload video');
+                  } finally {
+                    setIsUploading(false);
                   }
+                } else {
+                  showError('Unsupported file type', `Cannot upload ${file.type}`);
                 }
               }
             }}
@@ -2286,8 +2308,13 @@ const TimelineRow = observer(
               const file = files[0];
 
               if (file.type.startsWith('audio/')) {
+                showInfoNeutral('Uploading audio...', file.name);
+                // Audio upload handling would go here
               } else if (file.type.startsWith('image/')) {
                 try {
+                  setIsUploading(true);
+                  showInfoNeutral('Uploading image...', file.name);
+
                   const formData = new FormData();
                   formData.append('image', file);
 
@@ -2301,12 +2328,19 @@ const TimelineRow = observer(
                       row: rowIndex + 1,
                       startTime: 0,
                     });
+                    showDonePositive('Image uploaded successfully');
                   }
                 } catch (error) {
+                  showError('Failed to upload image', error.message);
                   handleCatchError(error, 'Failed to upload image');
+                } finally {
+                  setIsUploading(false);
                 }
               } else if (file.type.startsWith('video/')) {
                 try {
+                  setIsUploading(true);
+                  showInfoNeutral('Uploading video...', file.name);
+
                   // Handle video locally for immediate preview
                   await store.handleVideoUpload(file);
 
@@ -2350,9 +2384,16 @@ const TimelineRow = observer(
                     startTime: 0,
                     isNeedLoader: false,
                   });
+
+                  showDonePositive('Video uploaded successfully');
                 } catch (error) {
+                  showError('Failed to upload video', error.message);
                   handleCatchError(error, 'Failed to upload video');
+                } finally {
+                  setIsUploading(false);
                 }
+              } else {
+                showError('Unsupported file type', `Cannot upload ${file.type}`);
               }
             }
           }}

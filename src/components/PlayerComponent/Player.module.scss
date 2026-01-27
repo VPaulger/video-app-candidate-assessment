@@ -361,10 +361,12 @@
 .timelineContent {
   position: relative;
   width: 100%;
-  height: calc(100% - 32px); // Subtract height of timeline controls
+  min-height: calc(100% - 32px); // Subtract height of timeline controls
+  height: auto;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: visible;
   user-select: none;
   padding-top: 8px;
 

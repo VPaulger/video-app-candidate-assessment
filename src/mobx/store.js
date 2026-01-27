@@ -4495,6 +4495,7 @@ export class Store {
               isInTimeline: true,
               thumbnails,
               thumbnailDuration: videoDurationMs / thumbnails.length,
+              duration: videoDurationMs,
               zIndex: maxZIndex + 1,
               isActive: true,
             },
@@ -4664,7 +4665,9 @@ export class Store {
       videoElement.playsInline = true;
       videoElement.muted = true;
       videoElement.crossOrigin = 'anonymous';
-      videoElement.src = `${url}?v=${Date.now()}`;
+      // Don't add cache-busting to blob URLs as it breaks them
+      const isBlobUrl = url.startsWith('blob:');
+      videoElement.src = isBlobUrl ? url : `${url}?v=${Date.now()}`;
       videoElement.style.display = 'none';
       videoElement.muted = false;
       videoElement.volume = 1.0;
@@ -9613,6 +9616,29 @@ export class Store {
     const originalOffset = properties.videoOffset || 0;
     const secondOffset = originalOffset + (splitPoint - timeFrame.start);
 
+    // Calculate thumbnail distribution based on split point
+    const originalThumbnails = properties.thumbnails || [];
+    const elementDuration = timeFrame.end - timeFrame.start;
+    const totalVideoDuration = properties.duration || elementDuration;
+    const thumbnailDuration = properties.thumbnailDuration || (totalVideoDuration / Math.max(1, originalThumbnails.length));
+
+    // Calculate what portion of the element is before/after split
+    const firstDuration = splitPoint - timeFrame.start;
+    const secondDuration = timeFrame.end - splitPoint;
+    const totalThumbnails = originalThumbnails.length;
+
+    // Calculate thumbnail split based on time proportions
+    const firstProportion = firstDuration / elementDuration;
+    const splitThumbnailIndex = Math.max(1, Math.round(totalThumbnails * firstProportion));
+
+    // Distribute thumbnails to each segment - ensure each gets at least some thumbnails
+    const firstThumbnails = originalThumbnails.slice(0, splitThumbnailIndex);
+    const secondThumbnails = originalThumbnails.slice(Math.max(0, splitThumbnailIndex - 1));
+
+    // If one segment has no thumbnails, give it a copy of the original
+    const finalFirstThumbnails = firstThumbnails.length > 0 ? firstThumbnails : [...originalThumbnails];
+    const finalSecondThumbnails = secondThumbnails.length > 0 ? secondThumbnails : [...originalThumbnails];
+
     // Create the first element (start to split point)
     const firstElement = {
       ...item,
@@ -9627,7 +9653,9 @@ export class Store {
         ...properties,
         elementId: `video-${firstId}`,
         videoOffset: originalOffset,
-        thumbnails: properties.thumbnails || [],
+        thumbnails: finalFirstThumbnails,
+        thumbnailDuration: thumbnailDuration,
+        duration: firstDuration,
       },
     };
 
@@ -9645,7 +9673,9 @@ export class Store {
         ...properties,
         elementId: `video-${secondId}`,
         videoOffset: secondOffset,
-        thumbnails: properties.thumbnails || [],
+        thumbnails: finalSecondThumbnails,
+        thumbnailDuration: thumbnailDuration,
+        duration: secondDuration,
       },
     };
 
@@ -14583,6 +14613,143 @@ export class Store {
     this.ghostState.draggedRowIndex = null;
     this.ghostState.dragOverRowIndex = null;
     this.ghostState.rowInsertPosition = null;
+  });
+
+  // Ghost drag methods for timeline elements
+  startGhostDrag = action((element, clickOffset, rowIndex, mode = 'move') => {
+    this.ghostState.isDragging = true;
+    this.ghostState.ghostElement = element;
+    this.ghostState.dragMode = mode;
+    this.ghostState.clickOffset = clickOffset;
+    this.ghostState.sourceRowIndex = rowIndex;
+  });
+
+  startFileGhostDrag = action((file, elementType, duration) => {
+    this.ghostState.isFileDragging = true;
+    this.ghostState.fileGhostElement = file;
+    this.ghostState.fileElementType = elementType;
+    this.ghostState.fileDuration = duration;
+  });
+
+  startGalleryGhostDrag = action((item, elementType, duration) => {
+    this.ghostState.isGalleryDragging = true;
+    this.ghostState.galleryGhostElement = item;
+    this.ghostState.galleryElementType = elementType;
+    this.ghostState.galleryDuration = duration;
+  });
+
+  startAnimationGhostDrag = action((animation, clickOffset, rowIndex) => {
+    this.ghostState.isDragging = true;
+    this.ghostState.ghostElement = animation;
+    this.ghostState.clickOffset = clickOffset;
+    this.ghostState.sourceRowIndex = rowIndex;
+    this.ghostState.dragMode = 'animation';
+  });
+
+  startMultiGhostDrag = action((elements, clickOffset, rowIndex) => {
+    this.ghostState.isDragging = true;
+    this.ghostState.multiGhostElements = elements;
+    this.ghostState.clickOffset = clickOffset;
+    this.ghostState.sourceRowIndex = rowIndex;
+    this.ghostState.dragMode = 'multi';
+  });
+
+  resetGhostState = action(() => {
+    this.ghostState.isDragging = false;
+    this.ghostState.ghostElement = null;
+    this.ghostState.ghostMarkerPosition = null;
+    this.ghostState.dragMode = null;
+    this.ghostState.clickOffset = 0;
+    this.ghostState.sourceRowIndex = null;
+    this.ghostState.isFileDragging = false;
+    this.ghostState.fileGhostElement = null;
+    this.ghostState.fileGhostPosition = null;
+    this.ghostState.fileTargetRow = null;
+    this.ghostState.isGalleryDragging = false;
+    this.ghostState.galleryGhostElement = null;
+  });
+
+  updateGalleryGhost = action((position, rowIndex, isIncompatible = false) => {
+    this.ghostState.isGalleryDragging = true;
+    this.ghostState.galleryGhostPosition = position;
+    this.ghostState.galleryTargetRow = rowIndex;
+    this.ghostState.isIncompatible = isIncompatible;
+  });
+
+  updateFileGhost = action((position, rowIndex, isIncompatible = false) => {
+    this.ghostState.isFileDragging = true;
+    this.ghostState.fileGhostPosition = position;
+    this.ghostState.fileTargetRow = rowIndex;
+    this.ghostState.isFileIncompatible = isIncompatible;
+  });
+
+  finishGalleryGhostDrag = action((position, targetRow, callback) => {
+    if (callback && typeof callback === 'function') {
+      callback(position, targetRow);
+    }
+    this.ghostState.isGalleryDragging = false;
+    this.ghostState.galleryGhostElement = null;
+    this.ghostState.galleryGhostPosition = null;
+    this.ghostState.galleryTargetRow = null;
+    this.ghostState.galleryElementType = null;
+    this.ghostState.galleryDuration = null;
+  });
+
+  finishFileGhostDrag = action((position, targetRow, callback) => {
+    if (callback && typeof callback === 'function') {
+      callback(position, targetRow);
+    }
+    this.ghostState.isFileDragging = false;
+    this.ghostState.fileGhostElement = null;
+    this.ghostState.fileGhostPosition = null;
+    this.ghostState.fileTargetRow = null;
+    this.ghostState.fileElementType = null;
+    this.ghostState.fileDuration = null;
+  });
+
+  finishAnimationGhostDrag = action((animationId, targetRow, newStartTime) => {
+    const animation = this.animations.find(a => a.id === animationId);
+    if (animation) {
+      animation.row = targetRow;
+      if (newStartTime !== undefined) {
+        animation.startTime = newStartTime;
+      }
+    }
+    this.resetGhostState();
+  });
+
+  shiftRowsDown = action(fromRow => {
+    // Shift all elements at or below fromRow down by 1
+    this.editorElements.forEach(element => {
+      if (element.row >= fromRow) {
+        element.row += 1;
+      }
+    });
+    // Also shift animations
+    this.animations?.forEach(animation => {
+      if (animation.row >= fromRow) {
+        animation.row += 1;
+      }
+    });
+    // Update maxRows
+    this.maxRows = Math.max(this.maxRows, fromRow + 1);
+  });
+
+  moveElementToInterRowDropZone = action((elementId, targetRow, position = null) => {
+    const element = this.editorElements.find(el => el.id === elementId);
+    if (!element) return;
+
+    // Update the element's row
+    element.row = targetRow;
+
+    // Recalculate maxRows
+    this.recalculateMaxRows();
+
+    // Refresh and save
+    this.refreshElements();
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
   });
 
   // Delete an entire row: remove all elements in that row and shift rows above it down

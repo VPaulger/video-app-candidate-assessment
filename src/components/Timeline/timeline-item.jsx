@@ -116,9 +116,29 @@ const drawAudioWaveform = async (
     } else {
       const audioContext = new (window.AudioContext ||
         window.webkitAudioContext)();
-      const response = await fetch(audioUrl);
+
+      // Fetch audio data with error handling
+      let response;
+      try {
+        response = await fetch(audioUrl);
+        if (!response.ok) {
+          console.warn(`Audio fetch failed with status ${response.status} for ${audioUrl}`);
+          return [];
+        }
+      } catch (fetchError) {
+        console.warn('Audio fetch failed:', fetchError.message);
+        return [];
+      }
+
       const arrayBuffer = await response.arrayBuffer();
-      audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+      // Decode audio with error handling
+      try {
+        audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      } catch (decodeError) {
+        console.warn('Audio decode failed, skipping waveform:', decodeError.message);
+        return [];
+      }
 
       // Calculate max amplitude and RMS values for the entire audio file
       const channelData = audioBuffer.getChannelData(0);
@@ -1106,7 +1126,7 @@ const TimelineItem = observer(
                   <div className={styles.loadingSpinner}></div>
                   <span className={styles.loadingText}>Loading...</span>
                 </div>
-              ) : item.properties?.thumbnails ? (
+              ) : item.properties?.thumbnails?.length > 0 ? (
                 <div className={styles.thumbnailsContainer}>
                   {item.properties?.thumbnails?.map((thumb, idx) => {
                     // Calculate if this thumbnail should be visible based on the element's width
@@ -1134,6 +1154,20 @@ const TimelineItem = observer(
                       />
                     );
                   })}
+                </div>
+              ) : item.properties?.src ? (
+                <div
+                  className={styles.videoFallback}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    background: 'linear-gradient(90deg, rgba(211, 248, 90, 0.1) 0%, rgba(211, 248, 90, 0.05) 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '10px' }}>Video</span>
                 </div>
               ) : (
                 <div className={styles.placeholderVideo}>

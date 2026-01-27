@@ -5,7 +5,7 @@
   align-items: center;
   padding: 0 20px;
   padding-right: 40px;
-  height: 32px;
+  height: 34px;
   width: 100%;
   position: relative;
 
@@ -30,30 +30,52 @@
     align-items: center;
     height: 34px;
     border: 1px solid rgba(255, 255, 255, 0.04);
-
     border-radius: 4px;
     position: relative;
     z-index: 10;
+    gap: 2px;
+    box-sizing: border-box;
 
     &.reducedGap {
-      .threeDotsButton {
-        margin-left: 2px;
-      }
-    }
-
-    .threeDotsButton {
-      margin-left: -10px;
+      gap: 0px;
     }
 
     // Dragging state
     &.dragging {
       background-color: rgba(255, 255, 255, 0.06);
     }
+
+    // Ensure all buttons are vertically centered
+    button {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      box-sizing: border-box;
+      line-height: 1;
+    }
+
+    // Ensure spans inside buttons are also aligned
+    button span {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+
+    // Ensure SVGs are properly aligned
+    svg {
+      display: block;
+      vertical-align: middle;
+    }
   }
 
   .timelineControlsItem {
     display: flex;
     align-items: center;
+    height: 100%;
   }
 
   .dragIcon {
@@ -118,7 +140,6 @@
   justify-content: center;
   padding: 7px;
   border: none;
-  margin-left: -4px;
   position: relative;
 }
 
@@ -126,6 +147,7 @@
   position: relative;
   display: flex;
   align-items: center;
+  height: 34px;
 }
 
 .volumeControlNew {
@@ -134,6 +156,7 @@
   align-items: center;
   width: 160px;
   max-width: 112px;
+  height: 34px;
   border-radius: 0;
   box-shadow: none;
   outline: none;
@@ -452,7 +475,6 @@
   padding: 0;
   font-size: 10px;
   position: relative;
-  top: 8%;
   outline: none;
   border: none;
   background: transparent;
@@ -479,6 +501,9 @@
 }
 
 .resetButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: #ffffff99;
   font-size: 10px;
   font-weight: 500;
@@ -486,6 +511,7 @@
   letter-spacing: 0.03em;
   white-space: nowrap;
   padding: 8px;
+  height: 34px;
 }
 
 .speedContainer {
@@ -494,10 +520,9 @@
   align-items: center;
   justify-content: center;
   border-radius: 100px;
-  height: 20px;
+  height: 34px;
   transition: all 0.3s ease-in-out;
   width: 30px;
-  margin-left: -5px;
 }
 
 .speedButton {
@@ -521,8 +546,10 @@
 .undoRedoBtnSet {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 4px;
   padding: 4px;
+  height: 34px;
 }
 
 .undoRedoBtn {
@@ -554,7 +581,11 @@
 
 .cutButton {
   rotate: 270deg;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 8px;
+  height: 34px;
 }
 
 .active {
@@ -566,10 +597,16 @@
   align-items: center;
   justify-content: center;
   border: none;
+  padding: 4px;
+  height: 34px;
 }
 
 .removeSilenceBtn {
-  margin-left: -2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  height: 34px;
   transition: all 0.2s ease;
 
   &.processing {
@@ -599,25 +636,24 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px;
-  padding-left: 0px;
+  padding: 4px 8px;
+  height: 34px;
 }
 
 .divider {
   width: 1px;
-  height: 20px;
+  height: 18px;
   background-color: #ffffff1a;
-  margin-left: 0px;
 }
 
 .zoomControl {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 4px;
   padding: 4px;
   border-radius: 4px;
   box-shadow: none;
-  margin-left: -8px;
+  height: 34px;
 
   .zoomButton {
     display: flex;
@@ -751,15 +787,29 @@
 
 .threeDotsButton {
   transform: rotate(90deg);
+  display: flex;
   align-items: center;
+  justify-content: center;
   padding: 8px;
+  height: 34px;
 }
 
 .transitionsButton {
-  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  height: 34px;
 }
 
 .uploadBtn {
-  margin-left: 4px;
-  margin-right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  height: 34px;
+
+  &.uploading {
+    animation: pulse 1.5s ease-in-out infinite;
+  }
 }
