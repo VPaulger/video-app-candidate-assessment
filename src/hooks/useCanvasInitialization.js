@@ -424,8 +424,89 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
     canvas.set({
       selectionColor: 'rgba(211, 248, 90, 0.15)',
       selectionBorderColor: accentColor,
-      selectionLineWidth: 2,
+      selectionLineWidth: 3,
     });
+
+    // Helper function to constrain object within canvas bounds
+    // Only snaps back if object has NO overlap with canvas (completely outside)
+    // Allows partial positioning (e.g., when zoomed 4x and positioned half in/half out)
+    const constrainObjectToBounds = (obj) => {
+      if (!obj || !canvas) return false;
+
+      let wasClamped = false;
+      const canvasWidth = canvas.width;
+      const canvasHeight = canvas.height;
+
+      // Get object bounding box (handles rotation and scaling)
+      const boundingRect = obj.getBoundingRect(true, true);
+
+      const objLeft = boundingRect.left;
+      const objTop = boundingRect.top;
+      const objRight = boundingRect.left + boundingRect.width;
+      const objBottom = boundingRect.top + boundingRect.height;
+
+      // Check if object has NO overlap with canvas
+      // Object is completely outside if:
+      // - It's entirely to the left (objRight <= 0)
+      // - It's entirely to the right (objLeft >= canvasWidth)
+      // - It's entirely above (objBottom <= 0)
+      // - It's entirely below (objTop >= canvasHeight)
+      const isCompletelyOutside =
+        objRight <= 0 ||
+        objLeft >= canvasWidth ||
+        objBottom <= 0 ||
+        objTop >= canvasHeight;
+
+      if (!isCompletelyOutside) {
+        // Object has some overlap with canvas, allow the position
+        return false;
+      }
+
+      // Object is completely outside canvas, need to snap it back
+      wasClamped = true;
+
+      // Calculate the offset between object.left/top and boundingRect.left/top
+      const leftOffset = obj.left - objLeft;
+      const topOffset = obj.top - objTop;
+
+      // Snap to nearest edge
+      let newBoundingLeft = objLeft;
+      let newBoundingTop = objTop;
+
+      // Snap horizontally to nearest edge
+      if (objRight <= 0) {
+        // Completely to the left, snap to left edge
+        newBoundingLeft = 0;
+      } else if (objLeft >= canvasWidth) {
+        // Completely to the right, snap to right edge
+        newBoundingLeft = canvasWidth - boundingRect.width;
+      }
+
+      // Snap vertically to nearest edge
+      if (objBottom <= 0) {
+        // Completely above, snap to top edge
+        newBoundingTop = 0;
+      } else if (objTop >= canvasHeight) {
+        // Completely below, snap to bottom edge
+        newBoundingTop = canvasHeight - boundingRect.height;
+      }
+
+      // Convert back to object position by adding the offset
+      const newLeft = newBoundingLeft + leftOffset;
+      const newTop = newBoundingTop + topOffset;
+
+      obj.set({
+        left: newLeft,
+        top: newTop,
+      });
+
+      obj.setCoords();
+
+      return wasClamped;
+    };
+
+    // Store the function for external use
+    store.constrainObjectToBounds = constrainObjectToBounds;
 
     const guideline = new AlignGuidelines({
       canvas: canvas,
@@ -641,11 +722,28 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
                 hasBorders: true,
               });
             }
+            // Add shadow effect for visual selection feedback
+            obj.set({
+              shadow: {
+                color: accentColor,
+                blur: 15,
+                offsetX: 0,
+                offsetY: 0,
+              }
+            });
           });
+          canvas.renderAll();
         }
         createCustomSelectionOutline();
       });
-      canvas.on('selection:updated', function(e) {
+      canvas.on('selection:updated', function (e) {
+        // Remove shadow from previously selected objects
+        if (e.deselected && e.deselected.length > 0) {
+          e.deselected.forEach(obj => {
+            obj.set({ shadow: null });
+          });
+        }
+
         // Enable controls for video objects when selected
         if (e.selected && e.selected.length > 0) {
           e.selected.forEach(obj => {
@@ -655,11 +753,29 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
                 hasBorders: true,
               });
             }
+            // Add shadow effect for visual selection feedback
+            obj.set({
+              shadow: {
+                color: accentColor,
+                blur: 15,
+                offsetX: 0,
+                offsetY: 0,
+              }
+            });
           });
+          canvas.renderAll();
         }
         createCustomSelectionOutline();
       });
       canvas.on('selection:cleared', e => {
+        // Remove shadow from cleared selections
+        if (e.deselected && e.deselected.length > 0) {
+          e.deselected.forEach(obj => {
+            obj.set({ shadow: null });
+          });
+          canvas.renderAll();
+        }
+
         if (forceKeepSelection && lastActiveObject) {
           setTimeout(() => {
             canvas.setActiveObject(lastActiveObject);
@@ -692,6 +808,9 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       
       canvas.on('object:modified', function (e) {
         if (e.target && selectionLayer) {
+          // Apply boundary constraints after any modification
+          constrainObjectToBounds(e.target);
+          canvas.renderAll();
           createCustomSelectionOutline();
         }
         // Clear guidelines after object modification is complete
@@ -709,6 +828,11 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       });
       
       canvas.on('object:scaled', function (e) {
+        // Apply boundary constraints after scaling
+        if (e.target) {
+          constrainObjectToBounds(e.target);
+          canvas.renderAll();
+        }
         // Clear guidelines after scaling is complete
         setTimeout(() => {
           if (!canvas.getActiveObject()) {
@@ -724,6 +848,11 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       });
       
       canvas.on('object:rotated', function (e) {
+        // Apply boundary constraints after rotation
+        if (e.target) {
+          constrainObjectToBounds(e.target);
+          canvas.renderAll();
+        }
         // Clear guidelines after rotation is complete
         setTimeout(() => {
           if (!canvas.getActiveObject()) {
@@ -733,6 +862,9 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       });
       canvas.on('object:modified', function (e) {
         if (e.target && selectionLayer) {
+          // Apply boundary constraints after any modification
+          constrainObjectToBounds(e.target);
+          canvas.renderAll();
           createCustomSelectionOutline();
         }
         // Clear guidelines after object modification is complete
@@ -743,8 +875,16 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
         }, 100);
       });
       canvas.on('mouse:up', e => {
-        if (canvas.getActiveObject()) {
-          lastActiveObject = canvas.getActiveObject();
+        const activeObject = canvas.getActiveObject();
+        if (activeObject) {
+          lastActiveObject = activeObject;
+
+          // Apply boundary constraints on mouse up (after drag/move)
+          const wasClamped = constrainObjectToBounds(activeObject);
+          if (wasClamped) {
+            // Smooth snap-back if object was outside bounds
+            canvas.renderAll();
+          }
         }
 
         if (!isResizing && !activeControlPoint) {
