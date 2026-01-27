@@ -4706,13 +4706,16 @@ export class Store {
         };
 
         const thumbnails = await generateThumbnails();
-        const canvasWidth = this.canvas?.width || 1920;
-        const canvasHeight = this.canvas?.height || 1080;
+        const canvasWidth = this.canvas?.getWidth() || this.canvas?.width || 1920;
+        const canvasHeight = this.canvas?.getHeight() || this.canvas?.height || 1080;
         const scale = Math.min(
           canvasWidth / videoElement.videoWidth,
           canvasHeight / videoElement.videoHeight
         );
-        const xPos = (canvasWidth - videoElement.videoWidth * scale) / 2;
+        const scaledWidth = videoElement.videoWidth * scale;
+        const scaledHeight = videoElement.videoHeight * scale;
+        const xPos = (canvasWidth - scaledWidth) / 2;
+        const yPos = (canvasHeight - scaledHeight) / 2;
 
         // Find a suitable row for the video
         const existingElements = this.editorElements;
@@ -4882,7 +4885,7 @@ export class Store {
           // Replace the placeholder with the actual video
           const fabricVideo = new fabric.VideoImage(videoElement, {
             left: xPos,
-            top: 0,
+            top: yPos,
             width: videoElement.videoWidth * scale,
             height: videoElement.videoHeight * scale,
             scaleX: scale,
@@ -4906,7 +4909,7 @@ export class Store {
             type: 'video',
             placement: {
               x: xPos,
-              y: 0,
+              y: yPos,
               width: videoElement.videoWidth * scale,
               height: videoElement.videoHeight * scale,
               rotation: 0,
@@ -4938,7 +4941,7 @@ export class Store {
           // Create fabric.VideoImage object
           const fabricVideo = new fabric.VideoImage(videoElement, {
             left: xPos,
-            top: 0,
+            top: yPos,
             width: videoElement.videoWidth * scale,
             height: videoElement.videoHeight * scale,
             scaleX: scale,
@@ -5018,7 +5021,7 @@ export class Store {
               type: 'video',
               placement: {
                 x: xPos,
-                y: 0,
+                y: yPos,
                 width: videoElement.videoWidth * scale,
                 height: videoElement.videoHeight * scale,
                 rotation: 0,
@@ -5193,16 +5196,19 @@ export class Store {
           fabric.Image.fromURL(
             cacheBustUrl,
             img => {
-              const canvasWidth = this.canvas.width;
-              const maxCanvasHeight = this.canvas.height;
+              const canvasWidth = this.canvas.getWidth();
+              const maxCanvasHeight = this.canvas.getHeight();
 
               const scale = Math.min(
                 canvasWidth / img.width,
                 maxCanvasHeight / img.height
               );
 
-              const regularLeft = (canvasWidth - img.width * scale) / 2;
-              const regularTop = (maxCanvasHeight - img.height * scale) / 2;
+              const scaledWidth = img.width * scale;
+              const scaledHeight = img.height * scale;
+
+              const regularLeft = (canvasWidth - scaledWidth) / 2;
+              const regularTop = (maxCanvasHeight - scaledHeight) / 2;
 
               const id = getUid();
               const newElement = {

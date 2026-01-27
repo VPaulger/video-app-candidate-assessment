@@ -27,16 +27,25 @@ if (!fabric.VideoImage) {
     _render: function (ctx) {
       try {
         ctx.save();
-        
+
         // Apply custom filter if set
         const customFilter = this.customFilter;
-        if (customFilter && customFilter !== 'none' && customFilter !== null && customFilter !== undefined) {
+        if (
+          customFilter &&
+          customFilter !== 'none' &&
+          customFilter !== null &&
+          customFilter !== undefined
+        ) {
           const filterCSS = getFilterFromEffectType(customFilter);
-          if (filterCSS && filterCSS !== 'none' && filterCSS !== 'pixi-filter') {
+          if (
+            filterCSS &&
+            filterCSS !== 'none' &&
+            filterCSS !== 'pixi-filter'
+          ) {
             ctx.filter = filterCSS;
           }
         }
-        
+
         ctx.drawImage(
           this.videoElement,
           -this.width / 2,
@@ -44,15 +53,24 @@ if (!fabric.VideoImage) {
           this.width,
           this.height
         );
-        
+
         // Reset filter
-        if (customFilter && customFilter !== 'none' && customFilter !== null && customFilter !== undefined) {
+        if (
+          customFilter &&
+          customFilter !== 'none' &&
+          customFilter !== null &&
+          customFilter !== undefined
+        ) {
           const filterCSS = getFilterFromEffectType(customFilter);
-          if (filterCSS && filterCSS !== 'none' && filterCSS !== 'pixi-filter') {
+          if (
+            filterCSS &&
+            filterCSS !== 'none' &&
+            filterCSS !== 'pixi-filter'
+          ) {
             ctx.filter = 'none';
           }
         }
-        
+
         ctx.restore();
       } catch (err) {
         console.warn('Video render error:', err);
@@ -71,12 +89,17 @@ if (!fabric.VideoImage) {
 // Extend fabric.Image to support customFilter only if not already done
 if (!fabric.Image.prototype._customFilterSupport) {
   const originalImageRender = fabric.Image.prototype._render;
-  
-  fabric.Image.prototype._render = function(ctx) {
+
+  fabric.Image.prototype._render = function (ctx) {
     // Apply custom filter if set
     const customFilter = this.customFilter;
-    
-    if (customFilter && customFilter !== 'none' && customFilter !== null && customFilter !== undefined) {
+
+    if (
+      customFilter &&
+      customFilter !== 'none' &&
+      customFilter !== null &&
+      customFilter !== undefined
+    ) {
       const filterCSS = getFilterFromEffectType(customFilter);
       if (filterCSS && filterCSS !== 'none' && filterCSS !== 'pixi-filter') {
         ctx.save();
@@ -96,7 +119,7 @@ if (!fabric.Image.prototype._customFilterSupport) {
 
   // Add customFilter property to fabric.Image prototype
   fabric.Image.prototype.customFilter = 'none';
-  
+
   // Mark that custom filter support has been added
   fabric.Image.prototype._customFilterSupport = true;
 }
@@ -111,7 +134,7 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
 
     const containerWidth = videoPanelRef.current.clientWidth;
     const containerHeight = videoPanelRef.current.clientHeight;
-    const aspectRatio = store.getAspectRatioValue() || (9 / 16);
+    const aspectRatio = store.getAspectRatioValue() || 9 / 16;
 
     let newWidth = containerWidth;
     let newHeight = containerWidth / aspectRatio;
@@ -201,10 +224,10 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
     });
 
     // Calculate canvas dimensions based on aspect ratio
-    const canvasAspectRatio = store.getAspectRatioValue() || (9 / 16);
+    const canvasAspectRatio = store.getAspectRatioValue() || 9 / 16;
     const baseWidth = 1080;
     const canvasHeight = Math.round(baseWidth / canvasAspectRatio);
-    
+
     const canvas = new fabric.Canvas('canvas', {
       width: baseWidth,
       height: canvasHeight,
@@ -253,23 +276,36 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
     document.addEventListener('keyup', handleKeyUp);
 
     // Global click handler to clear canvas selection when clicking outside canvas
-    const handleGlobalClick = (e) => {
+    const handleGlobalClick = e => {
       // Check if click is inside canvas or canvas-related elements
       const canvasElement = canvas.getElement();
       const selectionLayer = document.getElementById('selection-layer');
       const canvasContainer = document.getElementById('grid-canvas-container');
-      
+
       if (!canvasElement) return;
-      
+
       // Check if the click target is within canvas area or related UI
-      const isInsideCanvas = canvasElement.contains(e.target) || canvasElement === e.target;
-      const isInsideSelectionLayer = selectionLayer && (selectionLayer.contains(e.target) || selectionLayer === e.target);
-      const isInsideCanvasContainer = canvasContainer && (canvasContainer.contains(e.target) || canvasContainer === e.target);
-      const isControlPoint = e.target.hasAttribute && e.target.hasAttribute('data-control-point');
-      const isHandleAction = e.target.hasAttribute && e.target.hasAttribute('data-handle-action');
-      
+      const isInsideCanvas =
+        canvasElement.contains(e.target) || canvasElement === e.target;
+      const isInsideSelectionLayer =
+        selectionLayer &&
+        (selectionLayer.contains(e.target) || selectionLayer === e.target);
+      const isInsideCanvasContainer =
+        canvasContainer &&
+        (canvasContainer.contains(e.target) || canvasContainer === e.target);
+      const isControlPoint =
+        e.target.hasAttribute && e.target.hasAttribute('data-control-point');
+      const isHandleAction =
+        e.target.hasAttribute && e.target.hasAttribute('data-handle-action');
+
       // If click is outside canvas area and not on control elements, clear selection
-      if (!isInsideCanvas && !isInsideSelectionLayer && !isInsideCanvasContainer && !isControlPoint && !isHandleAction) {
+      if (
+        !isInsideCanvas &&
+        !isInsideSelectionLayer &&
+        !isInsideCanvasContainer &&
+        !isControlPoint &&
+        !isHandleAction
+      ) {
         const activeObject = canvas.getActiveObject();
         if (activeObject) {
           canvas.discardActiveObject();
@@ -408,6 +444,43 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       if (canvas.isDrawingMode) {
         endDrawing();
       }
+
+      // Check if object was dragged completely outside canvas
+      const activeObj = canvas.getActiveObject();
+      if (activeObj && !canvas.isDrawingMode) {
+        const canvasWidth = canvas.width;
+        const canvasHeight = canvas.height;
+        const boundingRect = activeObj.getBoundingRect(true, true);
+
+        const isCompletelyOutsideLeft =
+          boundingRect.left + boundingRect.width <= 0;
+        const isCompletelyOutsideRight = boundingRect.left >= canvasWidth;
+        const isCompletelyOutsideTop =
+          boundingRect.top + boundingRect.height <= 0;
+        const isCompletelyOutsideBottom = boundingRect.top >= canvasHeight;
+
+        if (
+          isCompletelyOutsideLeft ||
+          isCompletelyOutsideRight ||
+          isCompletelyOutsideTop ||
+          isCompletelyOutsideBottom
+        ) {
+          // Calculate center position accounting for object's dimensions
+          const objWidth = activeObj.getScaledWidth();
+          const objHeight = activeObj.getScaledHeight();
+
+          // Center the object by placing its top-left at canvas center minus half its size
+          const centerLeft = (canvasWidth - objWidth) / 2;
+          const centerTop = (canvasHeight - objHeight) / 2;
+
+          activeObj.set({
+            left: centerLeft,
+            top: centerTop,
+          });
+          activeObj.setCoords();
+          canvas.renderAll();
+        }
+      }
     });
 
     store.updateBrushSettings = settings => {
@@ -437,12 +510,12 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
     });
 
     guideline.init();
-    
+
     // Store guideline reference for later use
     store.guideline = guideline;
 
     // Set CSS dimensions dynamically based on aspect ratio
-    const cssAspectRatio = store.getAspectRatioValue() || (9 / 16);
+    const cssAspectRatio = store.getAspectRatioValue() || 9 / 16;
     canvas.setDimensions(
       {
         width: `calc((100vh - 360px) * ${cssAspectRatio})`,
@@ -537,7 +610,7 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       }
 
       handleElements = [];
-      
+
       const hoverBox = document.querySelector('[data-testid*="hover-box"]');
       if (hoverBox) {
         hoverBox.style.display = 'none';
@@ -631,7 +704,7 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
 
       store.containerObserver = observer;
 
-      canvas.on('selection:created', function(e) {
+      canvas.on('selection:created', function (e) {
         // Enable controls for video objects when selected
         if (e.selected && e.selected.length > 0) {
           e.selected.forEach(obj => {
@@ -645,7 +718,7 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
         }
         createCustomSelectionOutline();
       });
-      canvas.on('selection:updated', function(e) {
+      canvas.on('selection:updated', function (e) {
         // Enable controls for video objects when selected
         if (e.selected && e.selected.length > 0) {
           e.selected.forEach(obj => {
@@ -680,8 +753,53 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
           updateControlPointsPositions(e.target);
         }
       });
-      
+
       canvas.on('object:moved', function (e) {
+        if (e.target) {
+          const obj = e.target;
+          const canvasWidth = canvas.width;
+          const canvasHeight = canvas.height;
+
+          // Get bounding rectangle to check position
+          const boundingRect = obj.getBoundingRect(true, true);
+
+          let needsSnap = false;
+
+          // Check if object is completely outside canvas (fully dragged off)
+          const isCompletelyOutsideLeft =
+            boundingRect.left + boundingRect.width <= 0;
+          const isCompletelyOutsideRight = boundingRect.left >= canvasWidth;
+          const isCompletelyOutsideTop =
+            boundingRect.top + boundingRect.height <= 0;
+          const isCompletelyOutsideBottom = boundingRect.top >= canvasHeight;
+
+          // If completely outside, snap back to center
+          if (
+            isCompletelyOutsideLeft ||
+            isCompletelyOutsideRight ||
+            isCompletelyOutsideTop ||
+            isCompletelyOutsideBottom
+          ) {
+            // Calculate center position accounting for object's dimensions
+            const objWidth = obj.getScaledWidth();
+            const objHeight = obj.getScaledHeight();
+
+            const centerLeft = (canvasWidth - objWidth) / 2;
+            const centerTop = (canvasHeight - objHeight) / 2;
+
+            obj.set({
+              left: centerLeft,
+              top: centerTop,
+            });
+            needsSnap = true;
+          }
+
+          if (needsSnap) {
+            obj.setCoords();
+            canvas.renderAll();
+          }
+        }
+
         // Clear guidelines after moving is complete
         setTimeout(() => {
           if (!canvas.getActiveObject()) {
@@ -689,11 +807,51 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
           }
         }, 100);
       });
-      
+
       canvas.on('object:modified', function (e) {
-        if (e.target && selectionLayer) {
-          createCustomSelectionOutline();
+        if (e.target) {
+          const obj = e.target;
+          const canvasWidth = canvas.width;
+          const canvasHeight = canvas.height;
+
+          // Get bounding rectangle to check position
+          const boundingRect = obj.getBoundingRect(true, true);
+
+          // Check if object is completely outside canvas
+          const isCompletelyOutsideLeft =
+            boundingRect.left + boundingRect.width <= 0;
+          const isCompletelyOutsideRight = boundingRect.left >= canvasWidth;
+          const isCompletelyOutsideTop =
+            boundingRect.top + boundingRect.height <= 0;
+          const isCompletelyOutsideBottom = boundingRect.top >= canvasHeight;
+
+          // If completely outside, snap back to center
+          if (
+            isCompletelyOutsideLeft ||
+            isCompletelyOutsideRight ||
+            isCompletelyOutsideTop ||
+            isCompletelyOutsideBottom
+          ) {
+            // Calculate center position accounting for object's dimensions
+            const objWidth = obj.getScaledWidth();
+            const objHeight = obj.getScaledHeight();
+
+            const centerLeft = (canvasWidth - objWidth) / 2;
+            const centerTop = (canvasHeight - objHeight) / 2;
+
+            obj.set({
+              left: centerLeft,
+              top: centerTop,
+            });
+            obj.setCoords();
+            canvas.renderAll();
+          }
+
+          if (selectionLayer) {
+            createCustomSelectionOutline();
+          }
         }
+
         // Clear guidelines after object modification is complete
         setTimeout(() => {
           if (!canvas.getActiveObject()) {
@@ -707,7 +865,7 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
           updateControlPointsPositions(e.target);
         }
       });
-      
+
       canvas.on('object:scaled', function (e) {
         // Clear guidelines after scaling is complete
         setTimeout(() => {
@@ -722,7 +880,7 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
           updateControlPointsPositions(e.target);
         }
       });
-      
+
       canvas.on('object:rotated', function (e) {
         // Clear guidelines after rotation is complete
         setTimeout(() => {
@@ -826,11 +984,11 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
 
       const width = Math.sqrt(
         Math.pow(domCoords.tr.x - domCoords.tl.x, 2) +
-        Math.pow(domCoords.tr.y - domCoords.tl.y, 2)
+          Math.pow(domCoords.tr.y - domCoords.tl.y, 2)
       );
       const height = Math.sqrt(
         Math.pow(domCoords.bl.x - domCoords.tl.x, 2) +
-        Math.pow(domCoords.bl.y - domCoords.tl.y, 2)
+          Math.pow(domCoords.bl.y - domCoords.tl.y, 2)
       );
       const left = domCoords.tl.x;
       const top = domCoords.tl.y;
@@ -839,12 +997,15 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       let hoverBox = document.querySelector('[data-testid*="hover-box"]');
       if (!hoverBox) {
         hoverBox = document.createElement('div');
-        hoverBox.setAttribute('data-testid', '@editor/video-canvas/hover-box/default');
+        hoverBox.setAttribute(
+          'data-testid',
+          '@editor/video-canvas/hover-box/default'
+        );
         hoverBox.style.position = 'absolute';
         hoverBox.style.pointerEvents = 'none';
         hoverBox.style.zIndex = '1000';
-        
-       const canvasContainer = canvasEl.parentElement;
+
+        const canvasContainer = canvasEl.parentElement;
         if (canvasContainer) {
           canvasContainer.appendChild(hoverBox);
         }
@@ -1165,14 +1326,14 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
 
               if (config.proportional) {
                 // For video objects, maintain aspect ratio properly
-                const isVideoObject = activeObject.type === 'videoImage' || activeObject.type === 'CoverVideo';
-                
+                const isVideoObject =
+                  activeObject.type === 'videoImage' ||
+                  activeObject.type === 'CoverVideo';
                 let scaleRatio;
                 if (isVideoObject) {
                   // For video, use the dominant direction to maintain aspect ratio
                   const widthChange = Math.abs(offsetX);
                   const heightChange = Math.abs(offsetY);
-                  
                   if (widthChange > heightChange) {
                     scaleRatio = Math.max(0.1, newWidth / original.width);
                   } else {

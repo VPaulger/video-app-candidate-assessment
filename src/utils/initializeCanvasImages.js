@@ -33,7 +33,6 @@ const initializeCanvasImages = async (data, store, dispatch) => {
 
   if (data.editorParams?.editorElements?.length > 0) {
     try {
-      console.log('data.editorParams.maxTime', data.editorParams.maxTime);
       // Use the saved maxTime from server, or calculate dynamically
       const savedMaxTime = data.editorParams.maxTime;
       if (savedMaxTime && savedMaxTime > 0) {
@@ -256,8 +255,8 @@ const initializeCanvasImages = async (data, store, dispatch) => {
             Array.isArray(el.targetIds) && el.targetIds.length
               ? el.targetIds
               : el.targetId
-              ? [el.targetId]
-              : [];
+                ? [el.targetId]
+                : [];
           const primaryTarget = targetIds.length
             ? store.editorElements.find(
                 e => e.id === targetIds[0] && e.type !== 'animation'
@@ -267,7 +266,7 @@ const initializeCanvasImages = async (data, store, dispatch) => {
             (el.timeFrame?.end || 0) - (el.timeFrame?.start || 0);
           const relativeStart = primaryTarget
             ? Math.max(0, el.timeFrame.start - primaryTarget.timeFrame.start)
-            : original.properties?.startTime ?? 0;
+            : (original.properties?.startTime ?? 0);
           const relativeEnd = relativeStart + duration;
 
           return {
