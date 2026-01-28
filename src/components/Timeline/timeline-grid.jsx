@@ -13,6 +13,7 @@ import toast from 'react-hot-toast';
 import { validateFile, detectCategory } from '../../utils/fileValidation';
 import { uploadFile } from '../../services/fileUploadService';
 import { getVideoMetadataFromUrl } from '../../utils/videoMetadata';
+import DropZoneOverlay from './DropZoneOverlay';
 
 const TimelineGrid = observer(
   ({
@@ -34,6 +35,8 @@ const TimelineGrid = observer(
     const store = React.useContext(StoreContext);
     const gridRef = useRef(null);
     const [isDraggingOver, setIsDraggingOver] = useState(false);
+    const [draggedFileType, setDraggedFileType] = useState(null);
+    const [isIncompatibleDrop, setIsIncompatibleDrop] = useState(false);
 
     const rows = Array.from({ length: store.maxRows });
 
@@ -97,7 +100,26 @@ const TimelineGrid = observer(
 
     const handleDragLeave = e => {
       e.preventDefault();
-      setIsDraggingOver(false);
+      // Only reset if actually leaving the grid (not just moving to child element)
+      const gridRect = gridRef.current?.getBoundingClientRect();
+      if (gridRect) {
+        const x = e.clientX;
+        const y = e.clientY;
+        if (
+          x < gridRect.left ||
+          x > gridRect.right ||
+          y < gridRect.top ||
+          y > gridRect.bottom
+        ) {
+          setIsDraggingOver(false);
+          setDraggedFileType(null);
+          setIsIncompatibleDrop(false);
+        }
+      } else {
+        setIsDraggingOver(false);
+        setDraggedFileType(null);
+        setIsIncompatibleDrop(false);
+      }
     };
 
     const handleDrop = async e => {
@@ -138,10 +160,16 @@ const TimelineGrid = observer(
         if (rejected.length) {
           const head = rejected
             .slice(0, 3)
-            .map(r => `${r.file.name} — ${r.reason}`)
+            .map(r => {
+              const fileName = r.file.name.length > 30 
+                ? r.file.name.substring(0, 27) + '...' 
+                : r.file.name;
+              return `${fileName} — ${r.reason}`;
+            })
             .join(', ');
           toast.error(
-            `Some files were rejected: ${head}${rejected.length > 3 ? '…' : ''}`
+            `Some files were rejected: ${head}${rejected.length > 3 ? ` (+${rejected.length - 3} more)` : ''}`,
+            { duration: 6000 }
           );
         }
 
@@ -156,7 +184,12 @@ const TimelineGrid = observer(
           const logicalType = (category || '').toLowerCase();
 
           if (!logicalType) {
-            toast.error(`Unsupported file type: ${file.name}`);
+            const fileName = file.name.length > 40 
+              ? file.name.substring(0, 37) + '...' 
+              : file.name;
+            toast.error(`Unable to determine file type for: ${fileName}. Please ensure the file has a valid extension.`, {
+              duration: 5000
+            });
             continue;
           }
 
@@ -171,7 +204,12 @@ const TimelineGrid = observer(
                 : null;
 
             if (!uploadType) {
-              toast.error(`Unsupported file type: ${file.name}`);
+              const fileName = file.name.length > 40 
+                ? file.name.substring(0, 37) + '...' 
+                : file.name;
+              toast.error(`Unsupported file type for: ${fileName}. Supported types: images (PNG, JPG, GIF, WebP), videos (MP4, MOV, WebM), and audio (MP3, WAV, OGG).`, {
+                duration: 5000
+              });
               continue;
             }
 
@@ -303,7 +341,13 @@ const TimelineGrid = observer(
             }
           } catch (err) {
             console.error('Drag and drop upload error:', err);
-            toast.error(`Failed to upload ${file.name}`);
+            const fileName = file.name.length > 40 
+              ? file.name.substring(0, 37) + '...' 
+              : file.name;
+            const errorMessage = err?.message || 'Unknown error occurred';
+            toast.error(`Failed to upload ${fileName}: ${errorMessage}`, {
+              duration: 5000
+            });
           }
         }
 
@@ -495,12 +539,21 @@ const TimelineGrid = observer(
     };
 
     return (
-      <div className={styles.timelineGridContainer}>
+      <div 
+        className={`${styles.timelineGridContainer} ${isDraggingOver ? styles.draggingOver : ''}`}
+      >
         {/* Timeline Ruler - shows time markers */}
         <TimelineRuler scale={scale} />
         
+        {/* Drop Zone Overlay */}
+        <DropZoneOverlay 
+          isDraggingOver={isDraggingOver}
+          isIncompatible={isIncompatibleDrop}
+          fileType={draggedFileType}
+        />
+        
         <div
-          className={styles.timelineRowContainer}
+          className={`${styles.timelineRowContainer} ${isDraggingOver ? styles.draggingOver : ''}`}
           style={{ width: `${99.95 * scale}%` }}
           ref={gridRef}
         >

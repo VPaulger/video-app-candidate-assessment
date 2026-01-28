@@ -1308,11 +1308,14 @@ const TimeLineControlPanel = ({
   };
 
   const handleUploadClick = () => {
+    // Create accessible file input with proper attributes
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.multiple = true;
     fileInput.accept = getAcceptAttribute('All'); // Accept all file types
     fileInput.style.display = 'none';
+    fileInput.setAttribute('aria-label', 'Upload media files to timeline');
+    fileInput.setAttribute('title', 'Select image, video, or audio files to add to timeline');
 
     fileInput.onchange = async e => {
       await processSelectedFiles(e.target.files);
@@ -1691,9 +1694,11 @@ const TimeLineControlPanel = ({
           tooltipText={
             isUploadingFiles || isUploading 
               ? 'Uploading files...' 
-              : 'Upload files to timeline'
+              : 'Upload files to timeline (or drag and drop files directly)'
           }
           disabled={isUploadingFiles || isUploading}
+          aria-label="Upload media files to timeline"
+          title="Click to browse files or drag and drop files directly onto the timeline"
         />
         {checkedStates.some(state => state) && (
           <div className={styles.dividerContainer}>

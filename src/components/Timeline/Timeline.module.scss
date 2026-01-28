@@ -149,6 +149,19 @@
   // Constrain height to enable scrolling in child
   min-height: 0;
   overflow: hidden; // Prevent container from growing
+  
+  // Drag-and-drop visual feedback
+  &.draggingOver {
+    background-color: rgba(59, 252, 234, 0.05);
+    border: 2px dashed var(--accent-color);
+    border-radius: 8px;
+    transition: all 0.2s ease;
+  }
+  
+  // Responsive adjustments
+  @media (max-width: 768px) {
+    border-width: 1px;
+  }
 }
 
 .timelineRowContainer {
@@ -167,6 +180,15 @@
   min-height: 0; // Critical: allow flex child to shrink below content size
   flex: 1 1 auto; // Allow flex growth but respect max-height
   padding-bottom: 16px;
+  position: relative;
+  
+  // Drag-and-drop hover state
+  &.draggingOver {
+    background-color: rgba(59, 252, 234, 0.08);
+    border: 2px dashed var(--accent-color);
+    border-radius: 6px;
+    transition: all 0.2s ease;
+  }
   
   // Custom scrollbar styling for better UX
   &::-webkit-scrollbar {
@@ -190,6 +212,17 @@
   // Firefox scrollbar
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
+  
+  // Responsive adjustments
+  @media (max-width: 768px) {
+    max-height: 140px;
+    padding-bottom: 12px;
+  }
+  
+  @media (max-width: 480px) {
+    max-height: 120px;
+    padding-bottom: 8px;
+  }
 }
 
 .timelineRow {
@@ -1756,6 +1789,157 @@
     background: rgba(139, 92, 246, 0.2);
   }
 
+  &.dragOver {
+    background-color: rgba(59, 252, 234, 0.15);
+    border: 2px dashed var(--accent-color);
+    border-radius: 4px;
+  }
+}
+
+// Drop Zone Overlay Styles
+.dropZoneOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  pointer-events: none;
+  background-color: rgba(31, 41, 55, 0.85);
+  backdrop-filter: blur(4px);
+  border-radius: 8px;
+  animation: dropZoneFadeIn 0.2s ease;
+  
+  &.dropZoneCompatible {
+    border: 3px dashed var(--accent-color);
+    background-color: rgba(59, 252, 234, 0.1);
+  }
+  
+  &.dropZoneIncompatible {
+    border: 3px dashed #ef4444;
+    background-color: rgba(239, 68, 68, 0.1);
+  }
+}
+
+.dropZoneContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 32px;
+  text-align: center;
+  
+  @media (max-width: 768px) {
+    padding: 24px;
+    gap: 12px;
+  }
+  
+  @media (max-width: 480px) {
+    padding: 16px;
+    gap: 8px;
+  }
+}
+
+.dropZoneIcon {
+  width: 64px;
+  height: 64px;
+  color: var(--accent-color);
+  animation: dropZonePulse 1.5s ease-in-out infinite;
+  
+  @media (max-width: 768px) {
+    width: 48px;
+    height: 48px;
+  }
+  
+  @media (max-width: 480px) {
+    width: 40px;
+    height: 40px;
+  }
+  
+  .dropZoneIncompatible & {
+    color: #ef4444;
+  }
+}
+
+.dropZoneText {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dropZoneTitle {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0;
+  
+  @media (max-width: 768px) {
+    font-size: 1.1rem;
+  }
+  
+  @media (max-width: 480px) {
+    font-size: 1rem;
+  }
+}
+
+.dropZoneSubtitle {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0;
+  
+  @media (max-width: 768px) {
+    font-size: 0.8rem;
+  }
+  
+  @media (max-width: 480px) {
+    font-size: 0.75rem;
+  }
+}
+
+@keyframes dropZoneFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes dropZonePulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+}
+
+// Enhanced drag feedback for timeline rows
+.timelineRow {
+  transition: background-color 0.2s ease, outline 0.2s ease, border-color 0.2s ease;
+  
+  &.dragOver {
+    background-color: rgba(59, 252, 234, 0.15);
+    outline: 2px dashed var(--accent-color);
+    outline-offset: -2px;
+    border-radius: 4px;
+  }
+  
+  &.dragIncompatible {
+    background-color: rgba(239, 68, 68, 0.1);
+    outline: 2px dashed #ef4444;
+    outline-offset: -2px;
+    border-radius: 4px;
+  }
+  
   &.dragOver {
     background: rgba(139, 92, 246, 0.3);
     border: 1px dashed #8b5cf6;

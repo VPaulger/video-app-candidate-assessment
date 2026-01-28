@@ -15,6 +15,8 @@ const PopupPanel = ({
   onSplitAudio,
   onSplitImage,
   element, // renamed from selectedElement for clarity
+  onShowTrackInfo,
+  hasTrackInfo,
 }) => {
   const popupRef = useRef(null);
 
@@ -133,6 +135,17 @@ const PopupPanel = ({
           <button className={styles.popupButton} onClick={handleSubtitles}>
             Text
           </button>
+          {hasTrackInfo && onShowTrackInfo && (
+            <button
+              className={styles.popupButton}
+              onClick={() => {
+                onShowTrackInfo();
+                onClose();
+              }}
+            >
+              Track Info
+            </button>
+          )}
           <button
             className={styles.popupButton}
             onClick={() => {

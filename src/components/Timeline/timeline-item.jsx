@@ -644,6 +644,7 @@ const TimelineItem = observer(
   }) => {
     const [isPopupVisible, setIsPopupVisible] = useState(false);
     const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
+    const [isTrackInfoVisible, setIsTrackInfoVisible] = useState(false);
     const waveformRef = useRef(null);
     const canvasRef = useRef(null);
     const inputRef = useRef(null);
@@ -2047,6 +2048,23 @@ const TimelineItem = observer(
                 onSplitImage={handleSplitImage}
                 onSplitVideo={handleSplitVideo}
                 element={item}
+                onShowTrackInfo={() => setIsTrackInfoVisible(true)}
+                hasTrackInfo={!!(item.properties?.tracks && (item.type === 'video' || item.type === 'audio'))}
+              />
+            )}
+
+            {/* Track Info Panel */}
+            {isTrackInfoVisible && (item.type === 'video' || item.type === 'audio') && (
+              <TrackInfoPanel
+                element={item}
+                tracks={item.properties?.tracks || { video: [], audio: [] }}
+                fileSize={item.properties?.fileSize}
+                onClose={() => setIsTrackInfoVisible(false)}
+                onTrackSwitch={(trackId) => {
+                  // TODO: Implement track switching in Store
+                  console.log('Switch to track:', trackId);
+                  setIsTrackInfoVisible(false);
+                }}
               />
             )}
           </DraggableElement>
