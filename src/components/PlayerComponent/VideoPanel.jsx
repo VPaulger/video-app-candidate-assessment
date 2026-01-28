@@ -76,6 +76,26 @@ export const VideoPanel = observer(
     }
   }, [store.renderingStatus]);
 
+    // Effect to initialize canvas interaction when canvas is ready
+    useEffect(() => {
+      const initializeCanvas = () => {
+        const canvasElement = document.getElementById('canvas');
+        if (canvasElement && store.canvas && !store.canvas.initialized) {
+          store.initializeCanvasInteraction();
+          store.setCanvasInteractionMode(true);
+          store.canvas.initialized = true;
+
+          console.log('Canvas interaction initialized in VideoPanel');
+        }
+      };
+      initializeCanvas();
+      const timeoutId = setTimeout(initializeCanvas, 500);
+
+      return () => {
+        clearTimeout(timeoutId);
+      };
+    }, [store]);
+
   // Add useEffect to handle canvas synchronization
   useEffect(() => {
       if (isFullscreenOpen) {
@@ -193,7 +213,26 @@ export const VideoPanel = observer(
       );
     };
 
-    const handlePanelClick = () => {
+    const handlePanelClick = e => {
+      // Check if the click is on a canvas object
+      if (store.canvas) {
+        try {
+          const fabricEvent = e.e || e;
+          if (fabricEvent) {
+            const pointer = store.canvas.getPointer(fabricEvent);
+            const objectsAtPointer = store.canvas.getObjects().filter(obj => {
+              return obj.containsPoint(pointer);
+            });
+
+            if (objectsAtPointer.length > 0) {
+              return;
+            }
+          }
+        } catch (error) {
+          console.warn('Canvas interaction error:', error);
+        }
+      }
+
       // Find the image element that's currently in the VideoPanel
       const imageElement = store.editorElements.find(
         el => el.type === 'imageUrl' && el.fabricObject?.canvas === store.canvas

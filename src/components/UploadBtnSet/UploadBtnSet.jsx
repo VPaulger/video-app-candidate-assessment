@@ -539,8 +539,11 @@ const UploadBtnSet = observer(({ storyId, storyData }) => {
                   store.saveDataOnBackend();
                 }
 
-                if (typeof store.saveToHistory === 'function') {
-                  store.saveToHistory();
+                if (
+                  window.dispatchSaveTimelineState &&
+                  !store.isUndoRedoOperation
+                ) {
+                  window.dispatchSaveTimelineState(store);
                 }
               }, 500);
             } else {
@@ -623,8 +626,8 @@ const UploadBtnSet = observer(({ storyId, storyData }) => {
         store.saveDataOnBackend();
       }
 
-      if (typeof store.saveToHistory === 'function') {
-        store.saveToHistory();
+      if (window.dispatchSaveTimelineState && !store.isUndoRedoOperation) {
+        window.dispatchSaveTimelineState(store);
       }
 
       setAudioFiles(prev => prev.filter(audio => audio.id !== fileId));

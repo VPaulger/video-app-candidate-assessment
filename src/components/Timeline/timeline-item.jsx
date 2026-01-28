@@ -1486,7 +1486,12 @@ const TimelineItem = observer(
               },
             };
 
-            store.saveToHistory();
+            if (
+              window.dispatchSaveTimelineState &&
+              !store.isUndoRedoOperation
+            ) {
+              window.dispatchSaveTimelineState(store);
+            }
 
             store.isUndoRedoOperation = true;
 

@@ -7903,10 +7903,6 @@ export class Store {
         }
       }, 100); // 100ms delay to ensure DOM is ready
     });
-
-    if (!this.isInitializing && !this.isUndoRedoOperation) {
-      this.saveToHistory();
-    }
   }
 
   pasteCoppiedElements(coppiedElements) {
@@ -8139,10 +8135,6 @@ export class Store {
         this.updateAudioElements();
         this.canvas?.requestRenderAll();
       });
-
-      if (!this.isInitializing && !this.isUndoRedoOperation) {
-        this.saveToHistory();
-      }
     }
   }
 
@@ -8718,10 +8710,6 @@ export class Store {
 
       // Wait for MobX to process state updates
       await Promise.resolve();
-
-      if (!this.isUndoRedoOperation) {
-        this.saveToHistory();
-      }
     });
   }
 
@@ -9008,6 +8996,219 @@ export class Store {
     }
   }
 
+  // Split video element at specified time point
+  splitVideoElement(element, splitPoint) {
+    if (!element || element.type !== 'video') {
+      console.error('Invalid video element for splitting');
+      return;
+    }
+    if (
+      splitPoint <= element.timeFrame.start ||
+      splitPoint >= element.timeFrame.end
+    ) {
+      console.error('Split point must be within the video element timeframe');
+      return;
+    }
+
+    runInAction(() => {
+      const firstClip = {
+        ...element,
+        timeFrame: {
+          start: element.timeFrame.start,
+          end: splitPoint,
+        },
+        properties: {
+          ...element.properties,
+          videoStartOffset: element.properties.videoStartOffset || 0,
+        },
+      };
+
+      // Create second clip (from split point to end)
+      const secondClip = {
+        ...element,
+        id: getUid(),
+        timeFrame: {
+          start: splitPoint,
+          end: element.timeFrame.end,
+        },
+        properties: {
+          ...element.properties,
+          videoStartOffset:
+            (element.properties.videoStartOffset || 0) +
+            (splitPoint - element.timeFrame.start),
+        },
+      };
+
+      // Find and replace the original element
+      const elementIndex = this.editorElements.findIndex(
+        el => el.id === element.id
+      );
+      if (elementIndex === -1) {
+        console.error('Original element not found in editorElements');
+        return;
+      }
+
+      const newElements = [...this.editorElements];
+      newElements[elementIndex] = firstClip;
+      newElements.splice(elementIndex + 1, 0, secondClip);
+
+      this.setEditorElements(newElements);
+      this.refreshElements();
+
+      this.updateMaxTime();
+
+      // Save state to Redux
+      if (!this.isUndoRedoOperation && window.dispatchSaveTimelineState) {
+        window.dispatchSaveTimelineState(this);
+      }
+    });
+  }
+
+  // Split audio element at specified time point
+  splitAudioElement(element, splitPoint) {
+    if (!element || element.type !== 'audio') {
+      console.error('Invalid audio element for splitting');
+      return;
+    }
+
+    if (
+      splitPoint <= element.timeFrame.start ||
+      splitPoint >= element.timeFrame.end
+    ) {
+      console.error('Split point must be within the audio element timeframe');
+      return;
+    }
+
+    runInAction(() => {
+      // Calculate durations
+      const firstDuration = splitPoint - element.timeFrame.start;
+      const secondDuration = element.timeFrame.end - splitPoint;
+
+      const firstClip = {
+        ...element,
+        timeFrame: {
+          start: element.timeFrame.start,
+          end: splitPoint,
+        },
+        properties: {
+          ...element.properties,
+          audioOffset: element.properties.audioOffset || 0,
+          duration: firstDuration,
+        },
+      };
+
+      const secondClip = {
+        ...element,
+        id: getUid(),
+        timeFrame: {
+          start: splitPoint,
+          end: element.timeFrame.end,
+        },
+        properties: {
+          ...element.properties,
+          audioOffset: (element.properties.audioOffset || 0) + firstDuration,
+          duration: secondDuration,
+          elementId: `audio_${getUid()}`,
+        },
+      };
+
+      const audioElement = document.createElement('audio');
+      audioElement.id = secondClip.properties.elementId;
+      audioElement.src = element.properties.src;
+      audioElement.playbackRate = this.playbackRate;
+      audioElement.volume = this.volume;
+      audioElement.currentTime = secondClip.properties.audioOffset / 1000;
+      document.body.appendChild(audioElement);
+
+      const elementIndex = this.editorElements.findIndex(
+        el => el.id === element.id
+      );
+      if (elementIndex === -1) {
+        console.error('Original element not found in editorElements');
+        return;
+      }
+
+      const newElements = [...this.editorElements];
+      newElements[elementIndex] = firstClip;
+      newElements.splice(elementIndex + 1, 0, secondClip);
+
+      this.setEditorElements(newElements);
+      this.refreshElements();
+
+      this.updateMaxTime();
+
+      if (!this.isUndoRedoOperation && window.dispatchSaveTimelineState) {
+        window.dispatchSaveTimelineState(this);
+      }
+    });
+  }
+
+  // Split image element at specified time point
+  splitImageElement(element, splitPoint) {
+    if (!element || (element.type !== 'imageUrl' && element.type !== 'image')) {
+      console.error('Invalid image element for splitting');
+      return;
+    }
+
+    if (
+      splitPoint <= element.timeFrame.start ||
+      splitPoint >= element.timeFrame.end
+    ) {
+      console.error('Split point must be within the image element timeframe');
+      return;
+    }
+
+    runInAction(() => {
+      const firstClip = {
+        ...element,
+        timeFrame: {
+          start: element.timeFrame.start,
+          end: splitPoint,
+        },
+      };
+
+      const secondClip = {
+        ...element,
+        id: getUid(),
+        timeFrame: {
+          start: splitPoint,
+          end: element.timeFrame.end,
+        },
+        fabricObject: null,
+      };
+
+      const elementIndex = this.editorElements.findIndex(
+        el => el.id === element.id
+      );
+      if (elementIndex === -1) {
+        console.error('Original element not found in editorElements');
+        return;
+      }
+
+      const newElements = [...this.editorElements];
+      newElements[elementIndex] = firstClip;
+      newElements.splice(elementIndex + 1, 0, secondClip);
+
+      this.setEditorElements(newElements);
+      this.refreshElements();
+
+      this.updateMaxTime();
+
+      if (!this.isUndoRedoOperation && window.dispatchSaveTimelineState) {
+        window.dispatchSaveTimelineState(this);
+      }
+    });
+  }
+
+  updateMaxTime() {
+    const maxElementTime = Math.max(
+      ...this.editorElements.map(el => el.timeFrame?.end || 0)
+    );
+    if (maxElementTime > this.maxTime) {
+      this.maxTime = maxElementTime + 5000;
+    }
+  }
+
   removeAllSubtitles() {
     // Filter out all subtitle elements in a single pass
     const filteredElements = this.editorElements.filter(
@@ -9057,6 +9258,919 @@ export class Store {
       maxTime,
       lastElement ? lastElement.timeFrame.end + buffer : buffer
     );
+  }
+
+  // Canvas item selection and move functionality
+  selectCanvasItem(fabricObject) {
+    if (!fabricObject || !this.canvas) {
+      return;
+    }
+
+    try {
+      const editorElement = this.editorElements.find(
+        el => el.fabricObject === fabricObject
+      );
+
+      if (editorElement) {
+        this.selectedElement = editorElement;
+        this.canvas.setActiveObject(fabricObject);
+
+        fabricObject.set({
+          borderColor: '#00ff00',
+          cornerColor: '#00ff00',
+          cornerSize: 8,
+          transparentCorners: false,
+          hasRotatingPoint: true,
+          rotatingPointOffset: 20,
+        });
+
+        this.canvas.requestRenderAll();
+
+        console.log('Canvas item selected:', editorElement.id);
+      }
+    } catch (error) {
+      console.error('Error selecting canvas item:', error);
+    }
+  }
+
+  clearCanvasSelection() {
+    if (!this.canvas) {
+      return;
+    }
+
+    try {
+      this.canvas.discardActiveObject();
+
+      // Remove selection styling from all objects
+      this.canvas.getObjects().forEach(obj => {
+        obj.set({
+          borderColor: 'rgba(102,153,255,0.75)',
+          cornerColor: 'rgba(102,153,255,0.5)',
+          cornerSize: 6,
+          transparentCorners: true,
+          hasRotatingPoint: false,
+        });
+      });
+
+      this.selectedElement = null;
+
+      this.canvas.requestRenderAll();
+
+      console.log('Canvas selection cleared');
+    } catch (error) {
+      console.error('Error clearing canvas selection:', error);
+    }
+  }
+
+  initializeCanvasInteraction() {
+    if (!this.canvas) {
+      console.warn('Canvas not initialized for interaction');
+      return;
+    }
+
+    try {
+      this.canvas.off('mouse:down');
+      this.canvas.off('mouse:move');
+      this.canvas.off('mouse:up');
+      this.canvas.off('selection:created');
+      this.canvas.off('selection:updated');
+      this.canvas.off('selection:cleared');
+
+      this.canvas.on('mouse:down', options => {
+        if (!options.target) {
+          this.clearCanvasSelection();
+          return;
+        }
+
+        this.selectCanvasItem(options.target);
+      });
+
+      this.canvas.on('selection:created', options => {
+        if (options.selected && options.selected.length > 0) {
+          this.selectCanvasItem(options.selected[0]);
+        }
+      });
+
+      this.canvas.on('selection:updated', options => {
+        if (options.selected && options.selected.length > 0) {
+          this.selectCanvasItem(options.selected[0]);
+        }
+      });
+
+      this.canvas.on('selection:cleared', () => {
+        this.clearCanvasSelection();
+      });
+
+      this.canvas.on('object:moving', options => {
+        this.trackObjectMovement(options.target);
+      });
+
+      this.canvas.on('object:modified', options => {
+        this.handleCanvasItemModified(options.target);
+      });
+
+      console.log('Canvas interaction initialized');
+    } catch (error) {
+      console.error('Error initializing canvas interaction:', error);
+    }
+  }
+
+  trackObjectMovement(fabricObject) {
+    if (!fabricObject || !this.canvas) {
+      return;
+    }
+
+    try {
+      const canvasRect = this.canvas.getElement().getBoundingClientRect();
+      const objectBounds = fabricObject.getBoundingRect();
+
+      // Check if object is being dragged outside canvas
+      const isOutsideCanvas =
+        objectBounds.left < 0 ||
+        objectBounds.top < 0 ||
+        objectBounds.left + objectBounds.width > this.canvas.getWidth() ||
+        objectBounds.top + objectBounds.height > this.canvas.getHeight();
+
+      if (isOutsideCanvas && !this.isDraggingOut) {
+        this.startDragOut(fabricObject);
+      }
+    } catch (error) {
+      console.error('Error tracking object movement:', error);
+    }
+  }
+
+  // Start drag-out process
+  startDragOut(fabricObject) {
+    if (!fabricObject || !this.selectedElement) {
+      return;
+    }
+
+    try {
+      this.isDraggingOut = true;
+      this.draggedOutElement = this.selectedElement;
+
+      this.createDragGhost(fabricObject);
+
+      this.setupGlobalDragListeners();
+
+      console.log('Started drag-out for element:', this.selectedElement.id);
+    } catch (error) {
+      console.error('Error starting drag-out:', error);
+    }
+  }
+
+  // Create a draggable ghost element
+  createDragGhost(fabricObject) {
+    try {
+      if (this.dragGhost) {
+        document.body.removeChild(this.dragGhost);
+      }
+
+      const ghostWidth = Math.min(
+        200,
+        fabricObject.width * fabricObject.scaleX
+      );
+      const ghostHeight = Math.min(
+        150,
+        fabricObject.height * fabricObject.scaleY
+      );
+
+      this.dragGhost = document.createElement('div');
+      this.dragGhost.style.cssText = `
+        position: fixed;
+        width: ${ghostWidth}px;
+        height: ${ghostHeight}px;
+        background: ${this.getElementPreview(fabricObject)};
+        border: 2px dashed #00ff00;
+        border-radius: 4px;
+        pointer-events: none;
+        z-index: 10000;
+        opacity: 0.8;
+        transform: translate(-50%, -50%);
+        transition: none;
+      `;
+
+      document.body.appendChild(this.dragGhost);
+    } catch (error) {
+      console.error('Error creating drag ghost:', error);
+    }
+  }
+
+  getElementPreview(fabricObject) {
+    try {
+      if (fabricObject.type === 'image' && fabricObject._element) {
+        return `url(${fabricObject._element.src}) center/cover`;
+      } else if (fabricObject.type === 'text') {
+        return fabricObject.fill || '#ffffff';
+      } else if (fabricObject.type === 'video') {
+        return '#333333';
+      } else {
+        return '#666666';
+      }
+    } catch (error) {
+      console.error('Error getting element preview:', error);
+      return '#666666';
+    }
+  }
+
+  setupGlobalDragListeners() {
+    if (this.globalDragListenersSetup) {
+      return;
+    }
+
+    this.globalDragListenersSetup = true;
+
+    const handleMouseMove = e => {
+      if (!this.isDraggingOut || !this.dragGhost) {
+        return;
+      }
+
+      this.dragGhost.style.left = e.clientX + 'px';
+      this.dragGhost.style.top = e.clientY + 'px';
+    };
+
+    const handleMouseUp = e => {
+      if (!this.isDraggingOut) {
+        return;
+      }
+
+      const canvasRect = this.canvas.getElement().getBoundingClientRect();
+      const isOutsideCanvas =
+        e.clientX < canvasRect.left ||
+        e.clientX > canvasRect.right ||
+        e.clientY < canvasRect.top ||
+        e.clientY > canvasRect.bottom;
+
+      if (isOutsideCanvas && this.draggedOutElement) {
+        this.createFloatingElement(e.clientX, e.clientY);
+
+        const originalFabricObject = this.draggedOutElement.fabricObject;
+        if (originalFabricObject) {
+          this.canvas.remove(originalFabricObject);
+        }
+
+        // Remove from editor elements
+        const index = this.editorElements.findIndex(
+          el => el.id === this.draggedOutElement.id
+        );
+        if (index !== -1) {
+          this.editorElements.splice(index, 1);
+        }
+      }
+
+      // Cleanup
+      this.endDragOut();
+    };
+
+    // Add global listeners
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    // Store cleanup function
+    this.cleanupGlobalDragListeners = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      this.globalDragListenersSetup = false;
+    };
+  }
+
+  // Create floating element at position
+  createFloatingElement(x, y) {
+    if (!this.draggedOutElement) {
+      return;
+    }
+
+    try {
+      const floatingElement = {
+        ...this.draggedOutElement,
+        id: `floating-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        type: 'floating',
+        position: { x, y },
+        originalElement: this.draggedOutElement,
+        createdAt: Date.now(),
+      };
+
+      if (!this.floatingElements) {
+        this.floatingElements = [];
+      }
+      this.floatingElements.push(floatingElement);
+
+      this.createFloatingDOMElement(floatingElement);
+
+      console.log('Created floating element at:', { x, y });
+    } catch (error) {
+      console.error('Error creating floating element:', error);
+    }
+  }
+
+  createFloatingDOMElement(floatingElement) {
+    try {
+      const domElement = document.createElement('div');
+      domElement.id = floatingElement.id;
+
+      const elementWidth = 200;
+      const elementHeight = 150;
+
+      domElement.style.cssText = `
+        position: fixed;
+        left: ${floatingElement.position.x}px;
+        top: ${floatingElement.position.y}px;
+        width: ${elementWidth}px;
+        height: ${elementHeight}px;
+        background: ${this.getElementPreview(floatingElement.originalElement.fabricObject)};
+        border: 2px solid #00ff00;
+        border-radius: 8px;
+        cursor: move;
+        z-index: 9999;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 12px;
+        font-weight: bold;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+        user-select: none;
+      `;
+
+      if (floatingElement.originalElement.type === 'text') {
+        domElement.textContent =
+          floatingElement.originalElement.properties?.text || 'Text';
+      } else if (floatingElement.originalElement.type === 'imageUrl') {
+        domElement.textContent = 'Image';
+      } else if (floatingElement.originalElement.type === 'video') {
+        domElement.textContent = 'Video';
+      } else {
+        domElement.textContent = 'Element';
+      }
+
+      this.makeFloatingElementDraggable(domElement, floatingElement);
+
+      document.body.appendChild(domElement);
+    } catch (error) {
+      console.error('Error creating floating DOM element:', error);
+    }
+  }
+
+  makeFloatingElementDraggable(element, floatingElement) {
+    let isDragging = false;
+    let startX, startY, initialX, initialY;
+
+    const handleMouseDown = e => {
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      initialX = floatingElement.position.x;
+      initialY = floatingElement.position.y;
+      element.style.zIndex = '10000';
+      element.style.transform = 'scale(1.05)';
+      e.preventDefault();
+    };
+
+    const handleMouseMove = e => {
+      if (!isDragging) return;
+
+      const deltaX = e.clientX - startX;
+      const deltaY = e.clientY - startY;
+
+      floatingElement.position.x = initialX + deltaX;
+      floatingElement.position.y = initialY + deltaY;
+
+      element.style.left = floatingElement.position.x + 'px';
+      element.style.top = floatingElement.position.y + 'px';
+
+      // Visual feedback when hovering over canvas
+      if (this.canvas) {
+        const canvasRect = this.canvas.getElement().getBoundingClientRect();
+        const elementCenterX = floatingElement.position.x + 100; // Half of 200px width
+        const elementCenterY = floatingElement.position.y + 75; // Half of 150px height
+
+        const isOverCanvas =
+          elementCenterX >= canvasRect.left &&
+          elementCenterX <= canvasRect.right &&
+          elementCenterY >= canvasRect.top &&
+          elementCenterY <= canvasRect.bottom;
+
+        // Change border color when over canvas
+        if (isOverCanvas) {
+          element.style.borderColor = '#00ff00';
+          element.style.boxShadow = '0 0 20px rgba(0, 255, 0, 0.6)';
+        } else {
+          element.style.borderColor = '#00ff00';
+          element.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+        }
+      }
+    };
+
+    const handleMouseUp = e => {
+      if (!isDragging) return;
+      isDragging = false;
+      element.style.zIndex = '9999';
+      element.style.transform = 'scale(1)';
+
+      if (this.canvas) {
+        const canvasRect = this.canvas.getElement().getBoundingClientRect();
+        const elementRect = element.getBoundingClientRect();
+
+        const elementCenterX = elementRect.left + elementRect.width / 2;
+        const elementCenterY = elementRect.top + elementRect.height / 2;
+
+        const isInsideCanvas =
+          elementCenterX >= canvasRect.left &&
+          elementCenterX <= canvasRect.right &&
+          elementCenterY >= canvasRect.top &&
+          elementCenterY <= canvasRect.bottom;
+
+        console.log('Canvas bounds check:', {
+          canvasRect,
+          elementRect,
+          elementCenter: { x: elementCenterX, y: elementCenterY },
+          isInsideCanvas,
+        });
+
+        if (isInsideCanvas) {
+          this.convertFloatingToCanvas(
+            floatingElement,
+            elementCenterX - canvasRect.left,
+            elementCenterY - canvasRect.top
+          );
+        }
+      }
+    };
+
+    element.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    element.cleanup = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }
+
+  convertFloatingToCanvas(floatingElement, canvasX, canvasY) {
+    if (!this.canvas || !floatingElement.originalElement) {
+      return;
+    }
+
+    try {
+      this.removeFloatingElement(floatingElement.id);
+
+      const originalElement = floatingElement.originalElement;
+      const canvasWidth = this.canvas.getWidth();
+      const canvasHeight = this.canvas.getHeight();
+
+      const clampedX = Math.max(0, Math.min(canvasX - 100, canvasWidth - 200)); // Center the 200px width
+      const clampedY = Math.max(0, Math.min(canvasY - 75, canvasHeight - 150)); // Center the 150px height
+
+      const originalWidth =
+        originalElement.placement?.width ||
+        originalElement.fabricObject?.width *
+          originalElement.fabricObject?.scaleX ||
+        300;
+      const originalHeight =
+        originalElement.placement?.height ||
+        originalElement.fabricObject?.height *
+          originalElement.fabricObject?.scaleY ||
+        200;
+
+      let newFabricObject;
+
+      if (originalElement.type === 'imageUrl' && originalElement.fabricObject) {
+        newFabricObject = new fabric.Image(
+          originalElement.fabricObject._element,
+          {
+            left: clampedX,
+            top: clampedY,
+            width: originalWidth,
+            height: originalHeight,
+            scaleX: 1,
+            scaleY: 1,
+          }
+        );
+      } else if (
+        originalElement.type === 'text' &&
+        originalElement.fabricObject
+      ) {
+        newFabricObject = new fabric.Text(originalElement.fabricObject.text, {
+          left: clampedX,
+          top: clampedY,
+          fontSize: originalElement.fabricObject.fontSize || 24,
+          fill: originalElement.fabricObject.fill || '#ffffff',
+          width: originalWidth,
+          height: originalHeight,
+        });
+      } else if (
+        originalElement.type === 'video' &&
+        originalElement.fabricObject
+      ) {
+        // Clone the video fabric object with original size
+        newFabricObject = new fabric.Image(
+          originalElement.fabricObject._element,
+          {
+            left: clampedX,
+            top: clampedY,
+            width: originalWidth,
+            height: originalHeight,
+            scaleX: 1,
+            scaleY: 1,
+          }
+        );
+      } else {
+        newFabricObject = new fabric.Rect({
+          left: clampedX,
+          top: clampedY,
+          width: originalWidth,
+          height: originalHeight,
+          fill: '#666666',
+          stroke: '#00ff00',
+          strokeWidth: 2,
+        });
+      }
+
+      // Add to canvas
+      this.canvas.add(newFabricObject);
+
+      const currentTime = this.currentTimeInMs;
+      const duration =
+        originalElement.timeFrame?.end - originalElement.timeFrame?.start ||
+        5000;
+
+      const newEditorElement = {
+        ...originalElement,
+        id: `canvas-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        fabricObject: newFabricObject,
+        placement: {
+          ...originalElement.placement,
+          x: clampedX,
+          y: clampedY,
+          width: originalWidth,
+          height: originalHeight,
+          rotation: 0,
+          scaleX: 1,
+          scaleY: 1,
+        },
+        // Update timeline to current position
+        timeFrame: {
+          start: currentTime,
+          end: currentTime + duration,
+        },
+        row: originalElement.row || 0,
+        properties: originalElement.properties || {},
+        type: originalElement.type,
+        name: originalElement.name || `Reattached ${originalElement.type}`,
+      };
+
+      this.addEditorElement(newEditorElement);
+
+      this.selectCanvasItem(newFabricObject);
+
+      console.log(
+        'Reattached floating element to canvas with updated timeline:',
+        {
+          x: clampedX,
+          y: clampedY,
+          originalTimeFrame: originalElement.timeFrame,
+          newTimeFrame: newEditorElement.timeFrame,
+          currentTime: currentTime,
+          size: { width: originalWidth, height: originalHeight },
+        }
+      );
+    } catch (error) {
+      console.error('Error converting floating element to canvas:', error);
+    }
+  }
+
+  endDragOut() {
+    try {
+      this.isDraggingOut = false;
+      this.draggedOutElement = null;
+
+      if (this.dragGhost) {
+        document.body.removeChild(this.dragGhost);
+        this.dragGhost = null;
+      }
+
+      if (this.cleanupGlobalDragListeners) {
+        this.cleanupGlobalDragListeners();
+      }
+
+      console.log('Ended drag-out process');
+    } catch (error) {
+      console.error('Error ending drag-out:', error);
+    }
+  }
+
+  removeFloatingElement(elementId) {
+    if (!this.floatingElements) return;
+
+    try {
+      const index = this.floatingElements.findIndex(el => el.id === elementId);
+      if (index !== -1) {
+        this.floatingElements.splice(index, 1);
+
+        const domElement = document.getElementById(elementId);
+        if (domElement) {
+          if (domElement.cleanup) {
+            domElement.cleanup();
+          }
+          document.body.removeChild(domElement);
+        }
+      }
+    } catch (error) {
+      console.error('Error removing floating element:', error);
+    }
+  }
+
+  enforceCanvasBounds(fabricObject) {
+    if (!fabricObject || !this.canvas) {
+      return;
+    }
+
+    try {
+      const canvasWidth = this.canvas.getWidth();
+      const canvasHeight = this.canvas.getHeight();
+
+      const bounds = fabricObject.getBoundingRect();
+
+      let needsSnapBack = false;
+      let newX = fabricObject.left;
+      let newY = fabricObject.top;
+
+      const horizontalOverflow = bounds.left + bounds.width - canvasWidth;
+      if (bounds.left < -50) {
+        newX = fabricObject.left - bounds.left + 10;
+        needsSnapBack = true;
+      } else if (horizontalOverflow > 50) {
+        newX = fabricObject.left - horizontalOverflow + 10;
+        needsSnapBack = true;
+      }
+
+      const verticalOverflow = bounds.top + bounds.height - canvasHeight;
+      if (bounds.top < -50) {
+        newY = fabricObject.top - bounds.top + 10;
+        needsSnapBack = true;
+      } else if (verticalOverflow > 50) {
+        newY = fabricObject.top - verticalOverflow + 10;
+        needsSnapBack = true;
+      }
+
+      if (needsSnapBack) {
+        fabricObject.set({
+          left: newX,
+          top: newY,
+        });
+        fabricObject.setCoords();
+
+        this.showSnapBackFeedback(fabricObject);
+      }
+    } catch (error) {
+      console.error('Error enforcing canvas bounds:', error);
+    }
+  }
+
+  // Show visual feedback when object snaps back
+  showSnapBackFeedback(fabricObject) {
+    if (!fabricObject) return;
+
+    try {
+      // Temporarily change border to indicate snap-back
+      const originalBorderColor = fabricObject.borderColor;
+      fabricObject.set({
+        borderColor: '#ff6b6b',
+        borderWidth: 3,
+      });
+
+      this.canvas?.requestRenderAll();
+
+      setTimeout(() => {
+        fabricObject.set({
+          borderColor: originalBorderColor,
+          borderWidth: 2,
+        });
+        this.canvas?.requestRenderAll();
+      }, 200);
+    } catch (error) {
+      console.error('Error showing snap-back feedback:', error);
+    }
+  }
+
+  handleCanvasItemModified(fabricObject) {
+    if (!fabricObject) {
+      return;
+    }
+
+    try {
+      const editorElement = this.editorElements.find(
+        el => el.fabricObject === fabricObject
+      );
+
+      if (editorElement) {
+        const newPlacement = {
+          ...editorElement.placement,
+          x: fabricObject.left,
+          y: fabricObject.top,
+          rotation: fabricObject.angle || 0,
+          scaleX: fabricObject.scaleX || 1,
+          scaleY: fabricObject.scaleY || 1,
+        };
+
+        this.updateEditorElement({
+          ...editorElement,
+          placement: newPlacement,
+        });
+
+        if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+          window.dispatchSaveTimelineState(this);
+        }
+
+        console.log(
+          'Canvas item position updated:',
+          editorElement.id,
+          newPlacement
+        );
+      }
+    } catch (error) {
+      console.error('Error handling canvas item modification:', error);
+    }
+  }
+
+  // Enable/disable canvas interaction mode
+  setCanvasInteractionMode(enabled = true) {
+    if (!this.canvas) {
+      return;
+    }
+
+    try {
+      if (enabled) {
+        this.canvas.selection = true;
+        this.canvas.getObjects().forEach(obj => {
+          obj.selectable = true;
+          obj.evented = true;
+          obj.moveCursor = 'move';
+        });
+        this.initializeCanvasInteraction();
+      } else {
+        this.canvas.selection = false;
+        this.canvas.getObjects().forEach(obj => {
+          obj.selectable = false;
+          obj.evented = false;
+          obj.moveCursor = 'default';
+        });
+        this.clearCanvasSelection();
+      }
+
+      this.canvas.requestRenderAll();
+      console.log('Canvas interaction mode:', enabled ? 'enabled' : 'disabled');
+    } catch (error) {
+      console.error('Error setting canvas interaction mode:', error);
+    }
+  }
+
+  // Handle canvas item removal and cleanup
+  removeCanvasItem(fabricObject) {
+    if (!fabricObject || !this.canvas) {
+      return;
+    }
+
+    try {
+      const editorElement = this.editorElements.find(
+        el => el.fabricObject === fabricObject
+      );
+
+      if (editorElement) {
+        if (this.selectedElement === editorElement) {
+          this.clearCanvasSelection();
+        }
+
+        this.canvas.remove(fabricObject);
+
+        this.removeEditorElement(editorElement.id);
+
+        console.log('Canvas item removed:', editorElement.id);
+      }
+    } catch (error) {
+      console.error('Error removing canvas item:', error);
+    }
+  }
+
+  getCanvasItemAtPosition(x, y) {
+    if (!this.canvas) {
+      return null;
+    }
+
+    try {
+      const pointer = { x, y };
+
+      const objectsAtPointer = this.canvas.getObjects().filter(obj => {
+        return obj.containsPoint(pointer);
+      });
+
+      return objectsAtPointer.length > 0
+        ? objectsAtPointer[objectsAtPointer.length - 1]
+        : null;
+    } catch (error) {
+      console.error('Error getting canvas item at position:', error);
+      return null;
+    }
+  }
+
+  isPositionInCanvas(x, y, padding = 0) {
+    if (!this.canvas) {
+      return false;
+    }
+
+    try {
+      const canvasWidth = this.canvas.getWidth();
+      const canvasHeight = this.canvas.getHeight();
+
+      return (
+        x >= padding &&
+        x <= canvasWidth - padding &&
+        y >= padding &&
+        y <= canvasHeight - padding
+      );
+    } catch (error) {
+      console.error('Error checking canvas bounds:', error);
+      return false;
+    }
+  }
+
+  clampPositionToCanvas(x, y, objectWidth = 0, objectHeight = 0) {
+    if (!this.canvas) {
+      return { x, y };
+    }
+
+    try {
+      const canvasWidth = this.canvas.getWidth();
+      const canvasHeight = this.canvas.getHeight();
+
+      const clampedX = Math.max(0, Math.min(x, canvasWidth - objectWidth));
+      const clampedY = Math.max(0, Math.min(y, canvasHeight - objectHeight));
+
+      return { x: clampedX, y: clampedY };
+    } catch (error) {
+      console.error('Error clamping position to canvas:', error);
+      return { x, y };
+    }
+  }
+
+  handleRapidDrag = fabricObject => {
+    if (!this.moveState.isMoving) {
+      this.moveState.isMoving = true;
+      this.moveState.lastUpdateTime = Date.now();
+
+      const handleMove = () => {
+        if (this.moveState.isMoving) {
+          this.enforceCanvasBounds(fabricObject);
+
+          this.moveState.rafId = requestAnimationFrame(handleMove);
+        }
+      };
+
+      handleMove();
+    }
+  };
+
+  stopRapidDrag = () => {
+    if (this.moveState.rafId) {
+      cancelAnimationFrame(this.moveState.rafId);
+      this.moveState.rafId = null;
+    }
+    this.moveState.isMoving = false;
+  };
+
+  addSelectionFeedback(fabricObject, isSelected = true) {
+    if (!fabricObject) {
+      return;
+    }
+
+    try {
+      if (isSelected) {
+        fabricObject.set({
+          borderColor: '#00ff00',
+          cornerColor: '#00ff00',
+          cornerSize: 8,
+          transparentCorners: false,
+          hasRotatingPoint: true,
+          rotatingPointOffset: 20,
+          shadow: 'rgba(0, 255, 0, 0.3) 0px 0px 10px',
+        });
+      } else {
+        fabricObject.set({
+          borderColor: 'rgba(102,153,255,0.75)',
+          cornerColor: 'rgba(102,153,255,0.5)',
+          cornerSize: 6,
+          transparentCorners: true,
+          hasRotatingPoint: false,
+          shadow: '',
+        });
+      }
+
+      this.canvas?.requestRenderAll();
+    } catch (error) {
+      console.error('Error adding selection feedback:', error);
+    }
   }
 
   playSubtitle(element) {
