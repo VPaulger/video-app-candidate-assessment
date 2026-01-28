@@ -15,7 +15,7 @@ const TimelineScrollbar = ({
 
   const store = React.useContext(StoreContext);
 
-  // 🔥 ПЛАВНІСТЬ
+ 
   const targetLeftRef = useRef(0);
   const currentLeftRef = useRef(0);
   const animationFrameRef = useRef(null);
@@ -28,7 +28,7 @@ const TimelineScrollbar = ({
     currentLeftRef.current = lerp(
       currentLeftRef.current,
       targetLeftRef.current,
-      0.15 // 🔥 чим менше — тим плавніше (0.08–0.2)
+      0.15 
     );
 
     handleRef.current.style.left = `${currentLeftRef.current}px`;

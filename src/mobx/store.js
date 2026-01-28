@@ -10459,6 +10459,196 @@ export class Store {
       );
     }
   }
+  ////////////////////
+    // Split audio element into two clips at given splitPoint (in ms)
+    splitAudioElement(editorElement, splitPoint) {
+      const index = this.editorElements.findIndex(
+        el => el.id === editorElement.id && el.type === 'audio'
+      );
+      if (index === -1) return;
+  
+      const element = this.editorElements[index];
+      if (!element.timeFrame) return;
+  
+      const { start, end } = element.timeFrame;
+      if (typeof start !== 'number' || typeof end !== 'number') return;
+  
+      // Не даємо створити нульову довжину
+      const MIN_DURATION = 1;
+      const clampedSplit = Math.max(start + MIN_DURATION, Math.min(splitPoint, end - MIN_DURATION));
+  
+      if (clampedSplit <= start || clampedSplit >= end) return;
+  
+      const baseOffset = element.properties?.audioOffset || 0;
+      const leftDuration = clampedSplit - start;
+      const rightDuration = end - clampedSplit;
+  
+      // Ліва частина зберігає старий id
+      const leftElement = {
+        ...element,
+        duration: leftDuration,
+        timeFrame: { start, end: clampedSplit },
+        properties: {
+          ...element.properties,
+          audioOffset: baseOffset,
+        },
+      };
+  
+      // Права частина — новий id + свій audioOffset і elementId
+      const rightId = getUid();
+      const rightElement = {
+        ...element,
+        id: rightId,
+        duration: rightDuration,
+        timeFrame: { start: clampedSplit, end },
+        properties: {
+          ...element.properties,
+          elementId: `audio-${rightId}`,
+          audioOffset: baseOffset + leftDuration,
+        },
+      };
+  
+      // Оновлюємо масив елементів на таймлайні
+      const newElements = [...this.editorElements];
+      newElements.splice(index, 1, leftElement, rightElement);
+      this.setEditorElements(newElements);
+  
+      // Створюємо DOM-елемент <audio> для правого кліпу (аналогічно addEditorElement)
+      if (rightElement.properties?.elementId && rightElement.properties?.src) {
+        const existingAudio = document.getElementById(rightElement.properties.elementId);
+        if (existingAudio) {
+          existingAudio.remove();
+        }
+  
+        const audioElement = document.createElement('audio');
+        audioElement.id = rightElement.properties.elementId;
+        audioElement.src = rightElement.properties.src;
+        audioElement.playbackRate = this.playbackRate;
+        audioElement.volume = this.volume;
+  
+        if (rightElement.properties.audioOffset !== undefined) {
+          audioElement.currentTime = Math.max(
+            0,
+            rightElement.properties.audioOffset / 1000
+          );
+        }
+  
+        document.body.appendChild(audioElement);
+      }
+  
+      this.refreshElements();
+  
+      if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+        window.dispatchSaveTimelineState(this);
+      }
+    }
+  
+    // Split image / imageUrl element into two clips
+    splitImageElement(editorElement, splitPoint) {
+      const index = this.editorElements.findIndex(
+        el =>
+          el.id === editorElement.id &&
+          (el.type === 'image' || el.type === 'imageUrl')
+      );
+      if (index === -1) return;
+  
+      const element = this.editorElements[index];
+      if (!element.timeFrame) return;
+  
+      const { start, end } = element.timeFrame;
+      if (typeof start !== 'number' || typeof end !== 'number') return;
+  
+      const MIN_DURATION = 1;
+      const clampedSplit = Math.max(start + MIN_DURATION, Math.min(splitPoint, end - MIN_DURATION));
+  
+      if (clampedSplit <= start || clampedSplit >= end) return;
+  
+      const leftDuration = clampedSplit - start;
+      const rightDuration = end - clampedSplit;
+  
+      // Ліва частина — той самий id
+      const leftElement = {
+        ...element,
+        duration: leftDuration,
+        timeFrame: { start, end: clampedSplit },
+      };
+  
+      // Права частина — новий id
+      const rightId = getUid();
+      const rightElement = {
+        ...element,
+        id: rightId,
+        duration: rightDuration,
+        timeFrame: { start: clampedSplit, end },
+      };
+  
+      const newElements = [...this.editorElements];
+      newElements.splice(index, 1, leftElement, rightElement);
+      this.setEditorElements(newElements);
+  
+      this.refreshElements();
+  
+      if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+        window.dispatchSaveTimelineState(this);
+      }
+    }
+  
+    // Split video element into two clips
+    splitVideoElement(editorElement, splitPoint) {
+      const index = this.editorElements.findIndex(
+        el => el.id === editorElement.id && el.type === 'video'
+      );
+      if (index === -1) return;
+  
+      const element = this.editorElements[index];
+      if (!element.timeFrame) return;
+  
+      const { start, end } = element.timeFrame;
+      if (typeof start !== 'number' || typeof end !== 'number') return;
+  
+      const MIN_DURATION = 1;
+      const clampedSplit = Math.max(start + MIN_DURATION, Math.min(splitPoint, end - MIN_DURATION));
+  
+      if (clampedSplit <= start || clampedSplit >= end) return;
+  
+      const baseOffset = element.properties?.videoOffset || 0;
+      const leftDuration = clampedSplit - start;
+      const rightDuration = end - clampedSplit;
+  
+      const leftElement = {
+        ...element,
+        duration: leftDuration,
+        timeFrame: { start, end: clampedSplit },
+        properties: {
+          ...element.properties,
+          videoOffset: baseOffset,
+        },
+      };
+  
+      const rightId = getUid();
+      const rightElement = {
+        ...element,
+        id: rightId,
+        duration: rightDuration,
+        timeFrame: { start: clampedSplit, end },
+        properties: {
+          ...element.properties,
+          videoOffset: baseOffset + leftDuration,
+        },
+      };
+  
+      const newElements = [...this.editorElements];
+      newElements.splice(index, 1, leftElement, rightElement);
+      this.setEditorElements(newElements);
+  
+      this.refreshElements();
+  
+      if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+        window.dispatchSaveTimelineState(this);
+      }
+    }
+  
+  /////////////////////
 
   processVideoMoveUpdate() {
     const now = performance.now();

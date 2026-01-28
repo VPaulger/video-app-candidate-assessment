@@ -792,248 +792,215 @@ const TimeLineControlPanel = ({
   const handleRemoveSilenceClose = () => {
     setIsRemoveSilenceVisible(false);
   };
-
+  
   const handleRemoveSilenceClick = () => {
-    // Get all audio elements
+   
     const audioElements = store.editorElements.filter(
       el => el.type === 'audio'
     );
-
-    if (audioElements.length === 0) {
-      return; // No audio elements, don't show menu
+  
+    if (!audioElements.length || isProcessingSilence) {
+      
+      return;
     }
-
-    // Toggle menu visibility
+  
+   
     if (isRemoveSilenceVisible) {
       setIsRemoveSilenceVisible(false);
       return;
     }
-
-    // Auto-select voice audio if no selection
-    let targetAudioId = selectedAudioForSilence;
-
-    if (!targetAudioId || !audioElements.find(el => el.id === targetAudioId)) {
-      // Find voice audio first, then any audio
-      const voiceAudio = audioElements.find(
-        el => el.properties?.audioType === 'voice'
-      );
-      const anyAudio = audioElements[0];
-      targetAudioId = voiceAudio?.id || anyAudio?.id;
-      setSelectedAudioForSilence(targetAudioId);
-
-      // Also select this audio element in the timeline
-      const selectedAudio = voiceAudio || anyAudio;
-      store.setSelectedElement(selectedAudio);
+  
+   
+    let targetAudio = null;
+    if (store.selectedElement && store.selectedElement.type === 'audio') {
+      targetAudio = store.selectedElement;
     }
-
-    // Capture the selected audio element's ID when menu opens
-    selectedAudioIdRef.current = targetAudioId;
-
-    // Position menu
+  
+    
+    if (!targetAudio && selectedAudioForSilence) {
+      targetAudio =
+        audioElements.find(el => el.id === selectedAudioForSilence) ||
+        null;
+    }
+  
+   
+    if (!targetAudio) {
+      targetAudio = audioElements[0];
+    }
+  
+    if (!targetAudio) return;
+  
+    setSelectedAudioForSilence(targetAudio.id);
+    selectedAudioIdRef.current = targetAudio.id;
+  
+   
+    if (
+      !store.selectedElement ||
+      store.selectedElement.id !== targetAudio.id
+    ) {
+      store.setSelectedElement(targetAudio);
+    }
+  
+    
     const btnNode = removeSilenceButtonRef.current;
     if (btnNode) {
       const { top, left, height, width } = btnNode.getBoundingClientRect();
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
-
-      // Estimate menu dimensions
+  
       const estimatedMenuWidth = 280;
       const estimatedMenuHeight = 400;
-
-      // Calculate initial position - open upward, centered above button
+  
       let menuX = left + width / 2 - estimatedMenuWidth / 2;
-      let menuY = top - estimatedMenuHeight - 8;
-
-      // Adjust if would overflow left edge
-      if (menuX < 8) {
-        menuX = 8;
-      }
-
-      // Adjust if would overflow right edge
+      let menuY = top - estimatedMenuHeight - 8; 
+  
+      if (menuX < 8) menuX = 8;
       if (menuX + estimatedMenuWidth > viewportWidth - 8) {
         menuX = viewportWidth - estimatedMenuWidth - 8;
       }
-
-      // If would overflow top, position below button instead
-      if (menuY < 8) {
+  
+      if (menuY < 0) {
+       
         menuY = top + height + 8;
       }
-
-      // Final check - if still would overflow bottom, position at top of viewport
-      if (menuY + estimatedMenuHeight > viewportHeight) {
+      if (menuY + estimatedMenuHeight > viewportHeight - 8) {
         menuY = Math.max(8, viewportHeight - estimatedMenuHeight - 8);
       }
-
-      setRemoveSilenceMenuCoords({
-        x: menuX,
-        y: menuY,
-      });
+  
+      setRemoveSilenceMenuCoords({ x: menuX, y: menuY });
     }
-
+  
     setIsRemoveSilenceVisible(true);
   };
+  
+const handleRemoveSilenceApply = async (settings, audioId) => {
+  
+  const targetId = audioId || selectedAudioForSilence;
 
-  const handleRemoveSilenceApply = async (settings, audioId) => {
-    // Find audio element by provided ID
-    let audioElement = null;
-    if (audioId) {
-      audioElement = store.editorElements.find(
-        el => el.id === audioId && el.type === 'audio'
-      );
+  let audioElement = null;
+  if (targetId) {
+    audioElement = store.editorElements.find(
+      el => el.id === targetId && el.type === 'audio'
+    );
+  }
+
+  
+  if (!audioElement && store.selectedElement?.type === 'audio') {
+    audioElement = store.selectedElement;
+  }
+
+  if (!audioElement) {
+    console.error('❌ No audio element available to process');
+    return;
+  }
+
+  
+  const audioUrl =
+    audioElement.properties?.src || audioElement.src || null;
+
+  if (!audioUrl) {
+    console.error('❌ Audio URL not found');
+    return;
+  }
+
+  setIsProcessingSilence(true);
+  
+  const loadingElement = {
+    ...audioElement,
+    isLoading: true,
+  };
+  store.updateEditorElement(loadingElement);
+
+  try {
+    
+    const response = await removeSilence({
+      audioUrl,
+      startThreshold: settings.startThreshold,
+      stopThreshold: settings.stopThreshold,
+      stopDuration: settings.stopDuration,
+    });
+
+    if (!response?.success || !response?.processedAudioUrl) {
+      throw new Error(response?.message || 'Failed to remove silence');
     }
 
-    if (!audioElement) {
-      console.error('❌ No audio element available to process');
-      return;
-    }
+   
+    const newDuration =
+      response.duration?.processedMs ?? audioElement.duration;
 
-    setIsProcessingSilence(true);
-    // Keep menu open and selection intact during processing
-    setIsRemoveSilenceVisible(true);
+    
+    const currentStartTime =
+      audioElement.timeFrame?.start ?? audioElement.from ?? 0;
 
-    // Set loading state on the audio element
-    const loadingElement = {
+    
+    const updatedElement = {
       ...audioElement,
-      isLoading: true,
+      duration: newDuration,
+      isLoading: false,
+      timeFrame: {
+        start: currentStartTime,
+        end: currentStartTime + newDuration,
+      },
+      properties: {
+        ...audioElement.properties,
+        src: response.processedAudioUrl,
+        originalAudioUrl: response.originalAudioUrl ?? audioUrl,
+        silenceRemovalStats: response.statistics,
+        silenceRemovalSettings: response.settings,
+        durationInfo: response.duration,
+      },
     };
-    store.updateEditorElement(loadingElement);
 
-    try {
-      const audioUrl = audioElement.src || audioElement.properties?.src;
+   
+    runInAction(() => {
+      
+      store.updateEditorElement(updatedElement);
 
-      if (!audioUrl) {
-        throw new Error('Audio URL not found');
+      
+      const elementId =
+        audioElement.properties?.elementId || audioElement.id;
+      const htmlAudioElement = document.getElementById(elementId);
+      if (htmlAudioElement) {
+        htmlAudioElement.src = response.processedAudioUrl;
+        htmlAudioElement.load();
       }
 
-      const response = await removeSilence({
-        audioUrl,
-        startThreshold: settings.startThreshold,
-        stopThreshold: settings.stopThreshold,
-        stopDuration: settings.stopDuration,
-        startDuration: settings.startDuration,
-      });
+      
+      const audioEndTime = currentStartTime + newDuration;
+      const maxElementTime = Math.max(
+        ...store.editorElements.map(el => el.timeFrame?.end || 0),
+        audioEndTime
+      );
 
-      if (response.success && response.processedAudioUrl) {
-        // Calculate new duration and timeFrame
-        const newDuration =
-          response.duration?.processedMs || audioElement.duration;
-        const currentStartTime =
-          audioElement.timeFrame?.start || audioElement.from || 1;
-
-        // Update the audio element's src with the processed audio URL
-        const updatedElement = {
-          ...audioElement,
-          duration: newDuration, // Update duration with processed duration
-          isLoading: false, // Remove loading state
-          timeFrame: {
-            start: currentStartTime,
-            end: currentStartTime + newDuration, // Update end time based on new duration
-          },
-          properties: {
-            ...audioElement.properties,
-            src: response.processedAudioUrl, // Оновлюємо src в properties
-            originalAudioUrl: response.originalAudioUrl,
-            silenceRemovalStats: response.statistics,
-            silenceRemovalSettings: response.settings,
-            durationInfo: response.duration, // Store full duration info
-          },
-        };
-
-        // Use runInAction to ensure MobX tracks the changes
-        runInAction(() => {
-          store.updateEditorElement(updatedElement);
-
-          // Update HTML audio element src directly
-          const htmlAudioElement = document.getElementById(
-            audioElement.properties.elementId
-          );
-          if (htmlAudioElement) {
-            htmlAudioElement.src = response.processedAudioUrl;
-            htmlAudioElement.load(); // Reload audio with new src
-          }
-
-          // Force MobX to trigger updates by touching the editorElements array
-          store.editorElements = [...store.editorElements];
-
-          // Синхронізація зображень (опціонально)
-          if (settings.syncImages) {
-            // Proportionally adjust image elements to fit new audio duration
-            const originalAudioDuration = audioElement.duration;
-            const compressionRatio = newDuration / originalAudioDuration;
-
-            // Find all image elements - try different approaches
-            let imageElements = store.editorElements.filter(
-              el => el.type === 'imageUrl' && el.row === audioElement.row
-            );
-
-            // If no images in same row, try finding all images
-            if (imageElements.length === 0) {
-              imageElements = store.editorElements.filter(
-                el => el.type === 'imageUrl'
-              );
-            }
-
-            // Update each image element proportionally
-            imageElements.forEach(imageElement => {
-              const originalStart = imageElement.timeFrame.start;
-              const originalEnd = imageElement.timeFrame.end;
-              const originalImageDuration = originalEnd - originalStart;
-
-              // Calculate new proportional timings
-              const newStart = originalStart * compressionRatio;
-              const newEnd =
-                newStart + originalImageDuration * compressionRatio;
-
-              const updatedImageElement = {
-                ...imageElement,
-                timeFrame: {
-                  start: newStart,
-                  end: newEnd,
-                },
-              };
-
-              store.updateEditorElement(updatedImageElement);
-            });
-          }
-
-          // Update maxTime if this audio was the longest element
-          const audioEndTime = currentStartTime + newDuration;
-          const maxElementTime = Math.max(
-            ...store.editorElements.map(el => el.timeFrame?.end || 0),
-            audioEndTime
-          );
-
-          if (maxElementTime < store.maxTime) {
-            // If all elements now end before current maxTime, adjust maxTime proportionally
-            const newMaxTime = Math.max(
-              maxElementTime + 5000,
-              newDuration + 10000
-            );
-            store.setMaxTime(newMaxTime);
-          }
-
-          // Refresh elements to ensure audio is reloaded
-          store.refreshElements();
-        });
-
-        // Close after success
-        setIsRemoveSilenceVisible(false);
-      } else {
-        throw new Error(response.message || 'Failed to remove silence');
+      if (maxElementTime < store.maxTime) {
+        const newMaxTime = Math.max(
+          maxElementTime + 5000,
+          newDuration + 10000
+        );
+        store.setMaxTime(newMaxTime);
       }
-    } catch (error) {
-      console.error('❌ Error removing silence:', error);
 
-      // Remove loading state on error
-      const errorElement = {
-        ...audioElement,
-        isLoading: false,
-      };
-      store.updateEditorElement(errorElement);
-    } finally {
-      setIsProcessingSilence(false);
-    }
-  };
+      
+      store.refreshElements();
+    });
+
+   
+    setIsRemoveSilenceVisible(false);
+  } catch (error) {
+    console.error('❌ Error removing silence:', error);
+
+   
+    const errorElement = {
+      ...audioElement,
+      isLoading: false,
+    };
+    store.updateEditorElement(errorElement);
+  } finally {
+    setIsProcessingSilence(false);
+  }
+};
+
+  
 
   const handleScaleChange = e => {
     const value = parseFloat(e.target.value);
@@ -1071,38 +1038,38 @@ const TimeLineControlPanel = ({
 
   const addFileToTimeline = async (file, uploadedUrl) => {
     const fileType = inferUploadCategory(file);
-    
-    // Create new row at the end - same logic as in TimelineRow drop zones
-    const newRow = store.maxRows;
-    
-    // Shift rows down to create space for new element
-    store.shiftRowsDown(newRow);
-
+  
+   
+    const videoRow = store.maxRows;
+  
+   
+    store.shiftRowsDown(videoRow);
+  
     if (fileType === 'image') {
       await store.addImageLocal({
         url: uploadedUrl,
-        minUrl: uploadedUrl, // Use same URL for now
-        row: newRow,
+        minUrl: uploadedUrl, 
+        row: videoRow,
         startTime: 0,
       });
       toast.success(`Added ${file.name} to timeline`);
     } else if (fileType === 'audio') {
-      // Get audio duration
+     
       const audio = new Audio();
-      const audioDuration = await new Promise((resolve) => {
+      const audioDuration = await new Promise(resolve => {
         audio.addEventListener('loadedmetadata', () => {
-          resolve(audio.duration * 1000); // Convert to milliseconds
+          resolve(audio.duration * 1000 || 5000); // ms, fallback 5s
         });
         audio.addEventListener('error', () => {
-          resolve(5000); // Default 5 seconds if can't get duration
+          resolve(5000);
         });
         audio.src = uploadedUrl;
       });
-
-      store.addExistingAudio({
+  
+      await store.addExistingAudio({
         base64Audio: uploadedUrl,
         durationMs: audioDuration,
-        row: newRow,
+        row: videoRow,
         startTime: 0,
         audioType: 'music',
         duration: audioDuration,
@@ -1110,33 +1077,72 @@ const TimeLineControlPanel = ({
       });
       toast.success(`Added ${file.name} to timeline`);
     } else if (fileType === 'video') {
-      // Get video duration
+     
       const video = document.createElement('video');
-      const videoDuration = await new Promise((resolve) => {
+      let hasAudioTrack = false;
+  
+      const videoDuration = await new Promise(resolve => {
         video.addEventListener('loadedmetadata', () => {
-          resolve(video.duration * 1000); // Convert to milliseconds
+          try {
+            if (typeof video.mozHasAudio !== 'undefined') {
+              hasAudioTrack = !!video.mozHasAudio;
+            } else if (typeof video.webkitAudioDecodedByteCount !== 'undefined') {
+              hasAudioTrack = video.webkitAudioDecodedByteCount > 0;
+            } else if (video.audioTracks && video.audioTracks.length) {
+              hasAudioTrack = video.audioTracks.length > 0;
+            } else {
+              
+              hasAudioTrack = true;
+            }
+          } catch (err) {
+            hasAudioTrack = true;
+          }
+  
+          const durationMs = (video.duration || 10) * 1000;
+          resolve(durationMs);
         });
         video.addEventListener('error', () => {
-          resolve(10000); // Default 10 seconds if can't get duration
+          hasAudioTrack = false;
+          resolve(10000); 
         });
         video.src = uploadedUrl;
       });
-
+  
+      
       await store.handleVideoUploadFromUrl({
         url: uploadedUrl,
         title: file.name,
         key: null,
         duration: videoDuration,
-        row: newRow,
+        row: videoRow,
         startTime: 0,
         isNeedLoader: false,
       });
+  
+      
+      if (hasAudioTrack) {
+        const audioRow = videoRow + 1;
+       
+        store.shiftRowsDown(audioRow);
+  
+        await store.addExistingAudio({
+          base64Audio: uploadedUrl,
+          durationMs: videoDuration,
+          row: audioRow,
+          startTime: 0,
+          audioType: 'music',
+          duration: videoDuration,
+          id: Date.now() + Math.random().toString(36).substring(2, 9),
+        });
+      }
+  
       toast.success(`Added ${file.name} to timeline`);
     }
-    
-    // Refresh elements to ensure proper display
+  
+   
     store.refreshElements();
   };
+  
 
   const processSelectedFiles = async (files) => {
     const list = Array.from(files || []);
@@ -1556,41 +1562,35 @@ const TimeLineControlPanel = ({
           />
         )}
         {getCheckedStateByName('Remove silence') && (
+
           <span ref={removeSilenceButtonRef}>
-            <ButtonWithIcon
-              icon="RemoveSilenceIcon"
-              size="26"
-              onClick={handleRemoveSilenceClick}
-              color={
-                store.editorElements.filter(el => el.type === 'audio').length >
-                0
-                  ? isProcessingSilence
-                    ? 'var(--accent-color)'
-                    : isRemoveSilenceVisible
-                    ? 'white'
-                    : '#FFFFFF66'
-                  : '#FFFFFF33'
-              }
-              accentColor="#FFFFFFB2"
-              activeColor="white"
-              classNameButton={`${styles.removeSilenceBtn} ${
-                isProcessingSilence ? styles.processing : ''
-              } ${
-                store.editorElements.filter(el => el.type === 'audio')
-                  .length === 0
-                  ? styles.disabled
-                  : ''
-              } ${isRemoveSilenceVisible ? styles.active : ''}`}
-              tooltipText={
-                store.editorElements.filter(el => el.type === 'audio')
-                  .length === 0
-                  ? 'No audio elements available'
-                  : isProcessingSilence
-                  ? 'Processing...'
-                  : 'Remove Silence'
-              }
-            />
-          </span>
+          <ButtonWithIcon
+            icon="RemoveSilenceIcon"
+            size="26"
+            onClick={handleRemoveSilenceClick}
+            color={
+              store.editorElements.filter(el => el.type === 'audio').length > 0
+                ? isProcessingSilence
+                  ? 'var(--accent-color)'
+                  : isRemoveSilenceVisible
+                  ? 'white'
+                  : '#FFFFFF66'
+                : '#FFFFFF33'
+            }
+            classNameButton={`${styles.removeSilenceBtn} ${
+              store.editorElements.filter(el => el.type === 'audio').length === 0
+                ? styles.disabled
+                : ''
+            } ${isRemoveSilenceVisible ? styles.active : ''}`}
+            tooltipText={
+              store.editorElements.filter(el => el.type === 'audio').length === 0
+                ? 'No audio elements available'
+                : isProcessingSilence
+                ? 'Processing...'
+                : 'Remove Silence'
+            }
+          />
+        </span>
         )}
         {getCheckedStateByName('Compact audio') && (
           <ButtonWithIcon
@@ -1761,21 +1761,30 @@ const TimeLineControlPanel = ({
       {/* Remove Silence Menu Portal */}
       {isRemoveSilenceVisible && (
         <PopupPortal
-          x={removeSilenceMenuCoords.x}
-          y={removeSilenceMenuCoords.y}
-        >
-          <RemoveSilenceMenu
-            ref={removeSilenceRef}
-            onApply={handleRemoveSilenceApply}
-            isProcessing={isProcessingSilence}
-            onClose={handleRemoveSilenceClose}
-            audioElements={store.editorElements.filter(
-              el => el.type === 'audio'
-            )}
-            selectedAudioId={selectedAudioForSilence}
-            onAudioSelect={setSelectedAudioForSilence}
-          />
-        </PopupPortal>
+    x={removeSilenceMenuCoords.x}
+    y={removeSilenceMenuCoords.y}
+  >
+    <div
+      ref={removeSilenceRef}
+      onMouseEnter={() => {
+        isMouseOverRemoveSilenceMenuRef.current = true;
+      }}
+      onMouseLeave={() => {
+        isMouseOverRemoveSilenceMenuRef.current = false;
+      }}
+    >
+      <RemoveSilenceMenu
+        onApply={handleRemoveSilenceApply}
+        isProcessing={isProcessingSilence}
+        onClose={handleRemoveSilenceClose}
+        audioElements={store.editorElements.filter(
+          el => el.type === 'audio'
+        )}
+        selectedAudioId={selectedAudioForSilence}
+        onAudioSelect={setSelectedAudioForSilence}
+      />
+    </div>
+  </PopupPortal>
       )}
     </div>
   );

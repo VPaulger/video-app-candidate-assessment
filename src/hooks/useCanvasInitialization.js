@@ -477,6 +477,45 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
     let skipNextClear = false;
     let activeControlPoint = null;
 
+    function clampObjectToCanvasBounds(object) {
+      if (!canvas || !object) return;
+
+      try {
+        const canvasWidth = canvas.getWidth();
+        const canvasHeight = canvas.getHeight();
+
+        const bounds = object.getBoundingRect(true, true);
+        if (!bounds) return;
+
+        let newLeft = object.left;
+        let newTop = object.top;
+
+        if (bounds.left < 0) {
+          newLeft -= bounds.left;
+        }
+        if (bounds.top < 0) {
+          newTop -= bounds.top;
+        }
+        if (bounds.left + bounds.width > canvasWidth) {
+          newLeft -= bounds.left + bounds.width - canvasWidth;
+        }
+        if (bounds.top + bounds.height > canvasHeight) {
+          newTop -= bounds.top + bounds.height - canvasHeight;
+        }
+
+        if (newLeft !== object.left || newTop !== object.top) {
+          object.set({
+            left: newLeft,
+            top: newTop,
+          });
+          object.setCoords();
+          canvas.requestRenderAll();
+        }
+      } catch (error) {
+        console.error('Failed to clamp object to canvas bounds', error);
+      }
+    }
+
     function snapshotHandles() {
       if (!selectionLayer) return;
 
@@ -743,8 +782,10 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
         }, 100);
       });
       canvas.on('mouse:up', e => {
-        if (canvas.getActiveObject()) {
-          lastActiveObject = canvas.getActiveObject();
+        const activeObject = canvas.getActiveObject();
+        if (activeObject) {
+          clampObjectToCanvasBounds(activeObject);
+          lastActiveObject = activeObject;
         }
 
         if (!isResizing && !activeControlPoint) {

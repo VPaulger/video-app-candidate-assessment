@@ -1879,24 +1879,23 @@ const TimelineRow = observer(
             onDragOver={e => {
               e.preventDefault();
             }}
+          
             onDrop={async e => {
               e.preventDefault();
               setIsDraggingFileOverTopDropZone(false);
 
-              // Check if we're currently dragging a timeline element
+             
               if (isDraggingTimelineElement) {
                 return;
               }
 
-              // Check if this is a React DnD operation (animation drop, etc.)
-              // React DnD uses 'application/json' and specific keys for its operations
+              
               if (
                 e.dataTransfer?.types.includes('application/json') ||
                 e.dataTransfer?.types.some(type =>
                   type.startsWith('__REACT_DND_NATIVE_TYPE__')
                 )
               ) {
-                // This is a React DnD operation, don't handle it here
                 return;
               }
 
@@ -1904,7 +1903,35 @@ const TimelineRow = observer(
               if (files && files.length > 0) {
                 const file = files[0];
 
+                // AUDIO
                 if (file.type.startsWith('audio/')) {
+                  try {
+                    const objectUrl = URL.createObjectURL(file);
+                    const audio = new Audio();
+                    const durationMs = await new Promise(resolve => {
+                      audio.addEventListener('loadedmetadata', () => {
+                        resolve(audio.duration ? audio.duration * 1000 : 5000);
+                      });
+                      audio.addEventListener('error', () => {
+                        resolve(5000);
+                      });
+                      audio.src = objectUrl;
+                    });
+
+                    await store.addExistingAudio({
+                      base64Audio: objectUrl,
+                      durationMs,
+                      row: 1, 
+                      startTime: 0,
+                      audioType: 'music',
+                      duration: durationMs,
+                      id: Date.now() + Math.random().toString(36).substring(2, 9),
+                    });
+                  } catch (error) {
+                    handleCatchError(error, 'Failed to add audio from file drop');
+                  }
+
+                // IMAGE
                 } else if (file.type.startsWith('image/')) {
                   try {
                     const formData = new FormData();
@@ -1924,35 +1951,68 @@ const TimelineRow = observer(
                   } catch (error) {
                     handleCatchError(error, 'Failed to upload image');
                   }
+
+                // VIDEO
                 } else if (file.type.startsWith('video/')) {
                   try {
-                    // Handle video locally for immediate preview
+                    
                     await store.handleVideoUpload(file);
 
-                    // Get video duration
+                   
+                    const videoElement = document.createElement('video');
+                    videoElement.preload = 'metadata';
+
+                    let hasAudioTrack = false;
                     const duration = await new Promise(resolve => {
-                      const video = document.createElement('video');
-                      video.preload = 'metadata';
-                      video.onloadedmetadata = () => {
-                        resolve(video.duration * 1000); // Convert to milliseconds
+                      videoElement.onloadedmetadata = () => {
+                        try {
+                          if (typeof videoElement.mozHasAudio !== 'undefined') {
+                            hasAudioTrack = !!videoElement.mozHasAudio;
+                          } else if (
+                            typeof videoElement.webkitAudioDecodedByteCount !==
+                            'undefined'
+                          ) {
+                            hasAudioTrack =
+                              videoElement.webkitAudioDecodedByteCount > 0;
+                          } else if (
+                            videoElement.audioTracks &&
+                            videoElement.audioTracks.length
+                          ) {
+                            hasAudioTrack = videoElement.audioTracks.length > 0;
+                          } else {
+                            hasAudioTrack = true; 
+                          }
+                        } catch (err) {
+                          hasAudioTrack = true;
+                        }
+
+                        resolve(
+                          videoElement.duration
+                            ? videoElement.duration * 1000
+                            : 10000
+                        );
                       };
-                      video.src = URL.createObjectURL(file);
+                      videoElement.onerror = () => {
+                        hasAudioTrack = false;
+                        resolve(10000);
+                      };
+                      videoElement.src = URL.createObjectURL(file);
                     });
 
-                    // Upload to AWS in the background
+                    // AWS
                     const { url, key } = await uploadVideoToAWS(
                       file,
                       progress => {
-                        // Progress callback for video upload
+                        
                       }
                     );
 
-                    // Save video metadata
+                    
                     const videoData = {
                       key: key,
                       s3Url: url,
                       title: file.name,
-                      length: duration / 1000, // Convert back to seconds for saveVideoData
+                      length: duration / 1000,
                     };
 
                     const saved = await saveVideoData(
@@ -1961,7 +2021,7 @@ const TimelineRow = observer(
                       user
                     );
 
-                    // Update store with uploaded video
+                   
                     store.handleVideoUploadFromUrl({
                       url: url,
                       title: file.name,
@@ -1971,12 +2031,36 @@ const TimelineRow = observer(
                       startTime: 0,
                       isNeedLoader: false,
                     });
+
+                   
+                    if (hasAudioTrack) {
+                      await store.addExistingAudio({
+                        base64Audio: url,
+                        durationMs: duration,
+                        row: 1,
+                        startTime: 0,
+                        audioType: 'music',
+                        duration: duration,
+                        id:
+                          Date.now() +
+                          Math.random().toString(36).substring(2, 9),
+                      });
+                    }
                   } catch (error) {
                     handleCatchError(error, 'Failed to upload video');
                   }
+
+                // UNSUPPORTED
+                } else {
+                  handleCatchError(
+                    new Error('Unsupported file type'),
+                    'Only image, video or audio files can be dropped here'
+                  );
                 }
               }
             }}
+
+            //////////////////////////////////////////////
           >
             {!store.selectedElements && (
               <div
