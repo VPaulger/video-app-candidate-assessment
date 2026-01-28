@@ -714,6 +714,7 @@ export class Store {
       isResizing: false,
       resizeType: null, // 'start' | 'end'
       resizeGhostElement: null,
+      resizingElementId: null, // Store element ID being resized
       // Multi-select ghost state
       isMultiDragging: false,
       multiGhostElements: [], // array of ghost elements for multi-select
@@ -2044,8 +2045,7 @@ export class Store {
               shouldBeVisible ? 1 : 0
             );
             console.log(
-              `GL Transition ${transition.id} opacity: ${
-                shouldBeVisible ? 1 : 0
+              `GL Transition ${transition.id} opacity: ${shouldBeVisible ? 1 : 0
               }`
             );
           }
@@ -2445,17 +2445,17 @@ export class Store {
             !lastFromState ||
             !lastToState ||
             Math.abs(currentFromState.opacity - lastFromState.opacity) >
-              opacityThreshold ||
+            opacityThreshold ||
             Math.abs(currentFromState.scaleX - lastFromState.scaleX) >
-              scaleThreshold ||
+            scaleThreshold ||
             Math.abs(currentFromState.scaleY - lastFromState.scaleY) >
-              scaleThreshold ||
+            scaleThreshold ||
             Math.abs(currentToState.opacity - lastToState.opacity) >
-              opacityThreshold ||
+            opacityThreshold ||
             Math.abs(currentToState.scaleX - lastToState.scaleX) >
-              scaleThreshold ||
+            scaleThreshold ||
             Math.abs(currentToState.scaleY - lastToState.scaleY) >
-              scaleThreshold;
+            scaleThreshold;
 
           if (shouldUpdateTextures) {
             // Only log significant state changes
@@ -2464,7 +2464,7 @@ export class Store {
                 currentFromState.opacity - (lastFromState?.opacity || 1)
               ) > 0.01 ||
               Math.abs(currentToState.opacity - (lastToState?.opacity || 1)) >
-                0.01;
+              0.01;
             if (hasOpacityChange) {
             }
 
@@ -2826,13 +2826,13 @@ export class Store {
         // For video elements, also preserve dimensions and position
         ...(isEditorVideoElement(fromElement)
           ? {
-              left: fromElement.fabricObject.left,
-              top: fromElement.fabricObject.top,
-              width: fromElement.fabricObject.width,
-              height: fromElement.fabricObject.height,
-              scaleX: fromElement.fabricObject.scaleX,
-              scaleY: fromElement.fabricObject.scaleY,
-            }
+            left: fromElement.fabricObject.left,
+            top: fromElement.fabricObject.top,
+            width: fromElement.fabricObject.width,
+            height: fromElement.fabricObject.height,
+            scaleX: fromElement.fabricObject.scaleX,
+            scaleY: fromElement.fabricObject.scaleY,
+          }
           : {}),
       };
     }
@@ -2847,13 +2847,13 @@ export class Store {
         // For video elements, also preserve dimensions and position
         ...(isEditorVideoElement(toElement)
           ? {
-              left: toElement.fabricObject.left,
-              top: toElement.fabricObject.top,
-              width: toElement.fabricObject.width,
-              height: toElement.fabricObject.height,
-              scaleX: toElement.fabricObject.scaleX,
-              scaleY: toElement.fabricObject.scaleY,
-            }
+            left: toElement.fabricObject.left,
+            top: toElement.fabricObject.top,
+            width: toElement.fabricObject.width,
+            height: toElement.fabricObject.height,
+            scaleX: toElement.fabricObject.scaleX,
+            scaleY: toElement.fabricObject.scaleY,
+          }
           : {}),
       };
     }
@@ -3591,8 +3591,8 @@ export class Store {
       Array.isArray(animation.targetIds) && animation.targetIds.length > 0
         ? animation.targetIds
         : animation.targetId
-        ? [animation.targetId]
-        : [];
+          ? [animation.targetId]
+          : [];
 
     const targetElements = this.editorElements.filter(
       el => targetIds.includes(el.id) && el.type !== 'animation'
@@ -6341,25 +6341,25 @@ export class Store {
           },
           words: words
             ? words.map((word, wordIndex) => {
-                const isLastWord =
-                  isLastSegment && wordIndex === words.length - 1;
-                // For the last word of the last segment, ensure it stays visible until the end
-                const wordEnd = isLastWord
-                  ? segmentEnd
-                  : end * 1000 + segmentDuration;
+              const isLastWord =
+                isLastSegment && wordIndex === words.length - 1;
+              // For the last word of the last segment, ensure it stays visible until the end
+              const wordEnd = isLastWord
+                ? segmentEnd
+                : end * 1000 + segmentDuration;
 
-                return {
-                  ...word,
-                  word: punctuation
-                    ? word.word
-                    : word.word.replaceAll('.', '').replaceAll(',', ''),
-                  originalWord: word.word,
-                  segmentStart: start,
-                  start: word.start * 1000 + segmentDuration,
-                  end: wordEnd,
-                  wordEnd: word.end * 1000,
-                };
-              })
+              return {
+                ...word,
+                word: punctuation
+                  ? word.word
+                  : word.word.replaceAll('.', '').replaceAll(',', ''),
+                originalWord: word.word,
+                segmentStart: start,
+                start: word.start * 1000 + segmentDuration,
+                end: wordEnd,
+                wordEnd: word.end * 1000,
+              };
+            })
             : [],
           wordObjects: [],
         },
@@ -6718,13 +6718,12 @@ export class Store {
       let displayName;
 
       if (animation.type.endsWith('Effect')) {
-        displayName = `${capitalizedType} ${
-          effectDirection === 'in'
-            ? 'In'
-            : effectDirection === 'out'
+        displayName = `${capitalizedType} ${effectDirection === 'in'
+          ? 'In'
+          : effectDirection === 'out'
             ? 'Out'
             : 'Effect'
-        }`;
+          }`;
       } else if (animation.type.endsWith('In')) {
         displayName = `${capitalizedType} In`;
       } else if (animation.type.endsWith('Out')) {
@@ -7051,9 +7050,8 @@ export class Store {
         const newDuration = newEndTime - newStartTime;
 
         const newAnimation = {
-          id: `${animationType}-${
-            targetElement.id
-          }-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          id: `${animationType}-${targetElement.id
+            }-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           type: sourceAnimation.type,
           duration: newDuration,
           effect: sourceAnimation.effect,
@@ -7862,16 +7860,16 @@ export class Store {
           // Deep copy properties if they exist
           properties: elementToCopy.properties
             ? {
-                ...elementToCopy.properties,
-                // Generate new elementId for video/audio elements to avoid conflicts
-                elementId: elementToCopy.properties.elementId
-                  ? `${elementToCopy.type}-${uuidv4()}`
-                  : elementToCopy.properties.elementId,
-                // Reset word objects for text elements - will be recreated
-                wordObjects: elementToCopy.properties.wordObjects
-                  ? []
-                  : undefined,
-              }
+              ...elementToCopy.properties,
+              // Generate new elementId for video/audio elements to avoid conflicts
+              elementId: elementToCopy.properties.elementId
+                ? `${elementToCopy.type}-${uuidv4()}`
+                : elementToCopy.properties.elementId,
+              // Reset word objects for text elements - will be recreated
+              wordObjects: elementToCopy.properties.wordObjects
+                ? []
+                : undefined,
+            }
             : undefined,
         };
 
@@ -10548,6 +10546,314 @@ export class Store {
     }
   }
 
+  // Start resize ghost for timeline element resizing
+  startResizeGhost(element, resizeType, initialClickOffset) {
+    if (!element) return;
+
+    this.ghostState.isResizing = true;
+    this.ghostState.resizeType = resizeType;
+    this.ghostState.initialClickOffset = initialClickOffset || 0;
+    this.ghostState.initialElementStart = element.timeFrame.start;
+    // Store element reference for later use
+    this.ghostState.resizingElementId = element.id;
+
+    // Create ghost element for visual feedback
+    const ghostWidth = ((element.timeFrame.end - element.timeFrame.start) / this.maxTime) * 100;
+    const ghostLeft = (element.timeFrame.start / this.maxTime) * 100;
+
+    this.ghostState.resizeGhostElement = {
+      left: ghostLeft,
+      width: ghostWidth,
+      row: element.row,
+      elementType: element.type,
+      canPush: true,
+    };
+  }
+
+  // Update resize ghost position during drag
+  updateResizeGhost(newStart, newEnd) {
+    if (!this.ghostState.isResizing || !this.ghostState.resizeGhostElement) return;
+
+    const newWidth = ((newEnd - newStart) / this.maxTime) * 100;
+    const newLeft = (newStart / this.maxTime) * 100;
+
+    this.ghostState.resizeGhostElement.left = newLeft;
+    this.ghostState.resizeGhostElement.width = newWidth;
+  }
+
+  // Finish resize ghost and apply the resize to the element
+  finishResizeGhost(finalStart, finalEnd) {
+    if (!this.ghostState.isResizing || !this.ghostState.resizingElementId) {
+      this.resetResizeGhost();
+      return;
+    }
+
+    // Find the actual element in editorElements
+    const actualElement = this.editorElements.find(
+      el => el.id === this.ghostState.resizingElementId
+    );
+    if (!actualElement) {
+      this.resetResizeGhost();
+      return;
+    }
+
+    // Ensure minimum duration
+    const MIN_DURATION = 100; // 100ms minimum
+    let validatedStart = finalStart;
+    let validatedEnd = finalEnd;
+
+    if (validatedEnd - validatedStart < MIN_DURATION) {
+      if (this.ghostState.resizeType === 'start') {
+        validatedStart = validatedEnd - MIN_DURATION;
+      } else {
+        validatedEnd = validatedStart + MIN_DURATION;
+      }
+    }
+
+    // Update element timeframe
+    runInAction(() => {
+      const elementIndex = this.editorElements.findIndex(
+        el => el.id === actualElement.id
+      );
+      if (elementIndex !== -1) {
+        this.editorElements[elementIndex] = {
+          ...actualElement,
+          timeFrame: {
+            start: validatedStart,
+            end: validatedEnd,
+          },
+        };
+      }
+    });
+
+    // Refresh elements
+    this.refreshElements();
+
+    // Save timeline state for undo/redo
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+
+    // Reset resize ghost state
+    this.resetResizeGhost();
+  }
+
+  // Reset resize ghost state
+  resetResizeGhost() {
+    this.ghostState.isResizing = false;
+    this.ghostState.resizeType = null;
+    this.ghostState.resizeGhostElement = null;
+    this.ghostState.initialClickOffset = 0;
+    this.ghostState.initialElementStart = 0;
+    this.ghostState.resizingElementId = null;
+  }
+
+  // Split video element at a specific time point
+  splitVideoElement(element, splitPoint) {
+    if (element.type !== 'video') {
+      console.warn('splitVideoElement called on non-video element');
+      return;
+    }
+
+    // Ensure split point is within element's timeframe
+    const clampedSplitPoint = Math.max(
+      element.timeFrame.start,
+      Math.min(splitPoint, element.timeFrame.end)
+    );
+
+    // Calculate the offset in the original video file for the split point
+    const currentVideoOffset = element.properties.videoOffset || 0;
+    const timeFromStart = clampedSplitPoint - element.timeFrame.start;
+    const newVideoOffset = currentVideoOffset + timeFromStart;
+
+    // Create first part (before split)
+    const firstPart = {
+      ...element,
+      timeFrame: {
+        start: element.timeFrame.start,
+        end: clampedSplitPoint,
+      },
+      // Keep original videoOffset for first part
+      properties: {
+        ...element.properties,
+        videoOffset: currentVideoOffset,
+      },
+    };
+
+    // Create second part (after split)
+    const secondPartId = getUid();
+    const secondPart = {
+      ...element,
+      id: secondPartId,
+      timeFrame: {
+        start: clampedSplitPoint,
+        end: element.timeFrame.end,
+      },
+      // Set videoOffset to start from split point in video file
+      properties: {
+        ...element.properties,
+        videoOffset: newVideoOffset,
+      },
+    };
+
+    // Find the index of the original element
+    const elementIndex = this.editorElements.findIndex(
+      el => el.id === element.id
+    );
+
+    if (elementIndex === -1) {
+      console.warn('Element not found for splitting');
+      return;
+    }
+
+    runInAction(() => {
+      // Replace original element with first part
+      this.editorElements[elementIndex] = firstPart;
+      // Insert second part right after first part
+      this.editorElements.splice(elementIndex + 1, 0, secondPart);
+    });
+
+    // Refresh elements to update canvas
+    this.refreshElements();
+
+    // Save timeline state for undo/redo
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+  }
+
+  // Split audio element at a specific time point
+  splitAudioElement(element, splitPoint) {
+    if (element.type !== 'audio') {
+      console.warn('splitAudioElement called on non-audio element');
+      return;
+    }
+
+    // Ensure split point is within element's timeframe
+    const clampedSplitPoint = Math.max(
+      element.timeFrame.start,
+      Math.min(splitPoint, element.timeFrame.end)
+    );
+
+    // Calculate the offset in the original audio file for the split point
+    const currentAudioOffset = element.properties.audioOffset || 0;
+    const timeFromStart = clampedSplitPoint - element.timeFrame.start;
+    const newAudioOffset = currentAudioOffset + timeFromStart;
+
+    // Create first part (before split)
+    const firstPart = {
+      ...element,
+      timeFrame: {
+        start: element.timeFrame.start,
+        end: clampedSplitPoint,
+      },
+      properties: {
+        ...element.properties,
+        audioOffset: currentAudioOffset,
+      },
+    };
+
+    // Create second part (after split)
+    const secondPartId = getUid();
+    const secondPart = {
+      ...element,
+      id: secondPartId,
+      timeFrame: {
+        start: clampedSplitPoint,
+        end: element.timeFrame.end,
+      },
+      properties: {
+        ...element.properties,
+        audioOffset: newAudioOffset,
+      },
+    };
+
+    // Find the index of the original element
+    const elementIndex = this.editorElements.findIndex(
+      el => el.id === element.id
+    );
+
+    if (elementIndex === -1) {
+      console.warn('Element not found for splitting');
+      return;
+    }
+
+    runInAction(() => {
+      // Replace original element with first part
+      this.editorElements[elementIndex] = firstPart;
+      // Insert second part right after first part
+      this.editorElements.splice(elementIndex + 1, 0, secondPart);
+    });
+
+    // Refresh elements to update canvas
+    this.refreshElements();
+
+    // Save timeline state for undo/redo
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+  }
+
+  // Split image element at a specific time point
+  splitImageElement(element, splitPoint) {
+    if (element.type !== 'imageUrl' && element.type !== 'image') {
+      console.warn('splitImageElement called on non-image element');
+      return;
+    }
+
+    // Ensure split point is within element's timeframe
+    const clampedSplitPoint = Math.max(
+      element.timeFrame.start,
+      Math.min(splitPoint, element.timeFrame.end)
+    );
+
+    // Create first part (before split)
+    const firstPart = {
+      ...element,
+      timeFrame: {
+        start: element.timeFrame.start,
+        end: clampedSplitPoint,
+      },
+    };
+
+    // Create second part (after split)
+    const secondPartId = getUid();
+    const secondPart = {
+      ...element,
+      id: secondPartId,
+      timeFrame: {
+        start: clampedSplitPoint,
+        end: element.timeFrame.end,
+      },
+      fabricObject: null,
+    };
+
+    // Find the index of the original element
+    const elementIndex = this.editorElements.findIndex(
+      el => el.id === element.id
+    );
+
+    if (elementIndex === -1) {
+      console.warn('Element not found for splitting');
+      return;
+    }
+
+    runInAction(() => {
+      // Replace original element with first part
+      this.editorElements[elementIndex] = firstPart;
+      // Insert second part right after first part
+      this.editorElements.splice(elementIndex + 1, 0, secondPart);
+    });
+
+    // Refresh elements to update canvas
+    this.refreshElements();
+
+    // Save timeline state for undo/redo
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+  }
+
   debouncedRefreshElements = () => {
     if (this.refreshDebounceTimeout) {
       clearTimeout(this.refreshDebounceTimeout);
@@ -10593,6 +10899,27 @@ export class Store {
   handleObjectModified(fabricObject, element) {
     // Save current state to history before making changes
     if (!this.isUndoRedoOperation) {
+    }
+
+    // Clamp object within canvas bounds
+    if (this.canvas) {
+      const canvasWidth = this.canvas.width;
+      const canvasHeight = this.canvas.height;
+      // Use getScaledWidth/Height if available, otherwise fallback to width*scaleX
+      const objectWidth = typeof fabricObject.getScaledWidth === 'function' 
+        ? fabricObject.getScaledWidth() 
+        : (fabricObject.width * (fabricObject.scaleX || 1));
+      const objectHeight = typeof fabricObject.getScaledHeight === 'function' 
+        ? fabricObject.getScaledHeight() 
+        : (fabricObject.height * (fabricObject.scaleY || 1));
+
+      const clampedLeft = Math.max(0, Math.min(fabricObject.left, canvasWidth - objectWidth));
+      const clampedTop = Math.max(0, Math.min(fabricObject.top, canvasHeight - objectHeight));
+
+      if (fabricObject.left !== clampedLeft || fabricObject.top !== clampedTop) {
+        fabricObject.set({ left: clampedLeft, top: clampedTop });
+        fabricObject.setCoords();
+      }
     }
 
     const placement = element.placement;
@@ -11170,8 +11497,8 @@ export class Store {
 
       if (
         lineWidths[currentLine] +
-          wordWidth +
-          (lines[currentLine].length > 0 ? spaceWidth : 0) >
+        wordWidth +
+        (lines[currentLine].length > 0 ? spaceWidth : 0) >
         maxWidth
       ) {
         currentLine++;
@@ -11309,10 +11636,10 @@ export class Store {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
     return result
       ? {
-          r: parseInt(result[1], 16),
-          g: parseInt(result[2], 16),
-          b: parseInt(result[3], 16),
-        }
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16),
+      }
       : { r: 255, g: 215, b: 0 }; // Default to gold color
   }
 
@@ -11488,9 +11815,8 @@ export class Store {
       });
 
       // Also set the font string explicitly
-      const fontString = `${textObject.fontStyle || 'normal'} ${
-        textObject.fontWeight || 'normal'
-      } ${textObject.fontSize || 12}px ${textObject.fontFamily || 'Arial'}`;
+      const fontString = `${textObject.fontStyle || 'normal'} ${textObject.fontWeight || 'normal'
+        } ${textObject.fontSize || 12}px ${textObject.fontFamily || 'Arial'}`;
       wordObj.set('font', fontString);
 
       // Update parent properties for background
@@ -11619,9 +11945,8 @@ export class Store {
     });
 
     // Also set the font string explicitly
-    const fontString = `${parentObject.fontStyle || 'normal'} ${
-      parentObject.fontWeight || 'normal'
-    } ${parentObject.fontSize || 12}px ${parentObject.fontFamily || 'Arial'}`;
+    const fontString = `${parentObject.fontStyle || 'normal'} ${parentObject.fontWeight || 'normal'
+      } ${parentObject.fontSize || 12}px ${parentObject.fontFamily || 'Arial'}`;
     textObject.set('font', fontString);
 
     return textObject;
