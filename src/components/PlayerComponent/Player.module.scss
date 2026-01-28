@@ -1833,7 +1833,7 @@
   align-items: center;
   width: 138px;
   gap: 16px;
-  z-index: 300;
+  z-index: 10000 !important;
 
   padding: 6px 16px;
   border-radius: 8px;

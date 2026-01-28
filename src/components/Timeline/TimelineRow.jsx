@@ -24,6 +24,7 @@ import { uploadVideoToAWS } from '../../utils/awsUpload';
 import { saveVideoData } from '../../utils/saveVideoMetadata';
 import { user as selectUser } from '../../redux/auth/selectors';
 import { Resizable } from 'react-resizable';
+import toast from 'react-hot-toast';
 
 // Helper function to check if element types are compatible for mixing on same row
 const areTypesCompatible = (type1, type2) => {
@@ -532,11 +533,205 @@ const TimelineRow = observer(
         'animation-effect',
         'animation-drop',
         'gl-transition-drop',
+        '__NATIVE_FILE__',
       ],
       hover: handleHover,
       drop: async (item, monitor) => {
         // Check if drop was already handled by a child
         if (monitor.didDrop()) {
+          return;
+        }
+
+        // Handle native file drops (drag & drop from local computer)
+        if (monitor.getItemType() === '__NATIVE_FILE__') {
+          const files = monitor.getItem().files;
+          if (files && files.length > 0) {
+            const file = files[0];
+            const hoverBoundingRect = dropRef.current?.getBoundingClientRect();
+            const clientOffset = monitor.getClientOffset();
+            
+            // Calculate drop position on timeline - improved accuracy
+            let startTime = 0;
+            if (hoverBoundingRect && clientOffset) {
+              const timelineContainer = document.querySelector(
+                '[class*="timelineRowContainer"]'
+              );
+              if (timelineContainer) {
+                const containerRect = timelineContainer.getBoundingClientRect();
+                const scrollLeft = timelineContainer.scrollLeft || 0;
+                // Calculate mouse position relative to timeline container
+                const mouseX = clientOffset.x - containerRect.left + scrollLeft;
+                const actualWidth = timelineContainer.scrollWidth || containerRect.width;
+                // Convert pixel position to time
+                startTime = Math.max(0, Math.min(store.maxTime, (mouseX / actualWidth) * store.maxTime));
+              } else {
+                // Fallback: use row bounding rect
+                const mouseX = clientOffset.x - hoverBoundingRect.left;
+                startTime = Math.max(0, Math.min(store.maxTime, (mouseX / hoverBoundingRect.width) * store.maxTime));
+              }
+            }
+
+            try {
+              // Create temporary URL for immediate preview
+              const tempUrl = URL.createObjectURL(file);
+              
+              // Determine file type
+              const fileType = file.type?.toLowerCase() || '';
+              const fileName = file.name?.toLowerCase() || '';
+              
+              let category = 'image';
+              if (fileType.startsWith('video/') || /\.(mp4|avi|mov|wmv|flv|webm|mkv|m4v|mpeg|mpg)$/i.test(fileName)) {
+                category = 'video';
+              } else if (fileType.startsWith('audio/') || /\.(mp3|wav|aac|flac|aiff|ogg|m4a)$/i.test(fileName)) {
+                category = 'audio';
+              } else if (fileType.startsWith('image/') || /\.(png|jpe?g|gif|bmp|webp|svg)$/i.test(fileName)) {
+                category = 'image';
+              } else {
+                const fileExtension = fileName.split('.').pop() || 'unknown';
+                toast.error(
+                  `Unsupported file type: ${file.name} (.${fileExtension}). ` +
+                  `Please use image (PNG, JPG, GIF, WebP), video (MP4, MOV, WebM), or audio (MP3, WAV, AAC) files.`
+                );
+                URL.revokeObjectURL(tempUrl);
+                return;
+              }
+
+              // Handle based on category
+              if (category === 'image') {
+                await store.addImageLocal({
+                  url: tempUrl,
+                  minUrl: tempUrl,
+                  row: rowIndex,
+                  startTime: startTime,
+                });
+                toast.success(`Added ${file.name} to timeline`);
+              } else if (category === 'audio') {
+                const audio = new Audio();
+                const audioDuration = await new Promise((resolve) => {
+                  audio.addEventListener('loadedmetadata', () => {
+                    resolve(audio.duration * 1000);
+                  });
+                  audio.addEventListener('error', () => {
+                    resolve(5000);
+                  });
+                  audio.src = tempUrl;
+                });
+
+                store.addExistingAudio({
+                  base64Audio: tempUrl,
+                  durationMs: audioDuration,
+                  row: rowIndex,
+                  startTime: startTime,
+                  audioType: 'music',
+                  duration: audioDuration,
+                  id: Date.now() + Math.random().toString(36).substring(2, 9),
+                });
+                toast.success(`Added ${file.name} to timeline`);
+              } else if (category === 'video') {
+                // Get video duration and check for audio
+                const video = document.createElement('video');
+                const videoData = await new Promise((resolve, reject) => {
+                  video.addEventListener('loadedmetadata', () => {
+                    resolve({
+                      duration: video.duration * 1000,
+                      hasAudio: video.mozHasAudio || video.webkitAudioDecodedByteCount > 0 || true, // Best guess
+                    });
+                  });
+                  video.addEventListener('error', () => {
+                    reject(new Error('Failed to load video metadata'));
+                  });
+                  video.src = tempUrl;
+                  video.load();
+                });
+
+                // Add video to timeline
+                await store.handleVideoUploadFromUrl({
+                  url: tempUrl,
+                  title: file.name,
+                  key: null,
+                  duration: videoData.duration,
+                  row: rowIndex,
+                  startTime: startTime,
+                  isNeedLoader: false,
+                });
+
+                // Check if video has audio and create audio track
+                // Use a simpler approach: try to create audio element and check if it loads
+                try {
+                  // Wait a bit for video element to be added to store
+                  await new Promise(resolve => setTimeout(resolve, 100));
+                  
+                  // Find the video element we just added
+                  const videoElements = store.editorElements.filter(
+                    el => el.type === 'video' && (el.properties?.src === tempUrl || el.src === tempUrl || el.properties?.src?.includes(file.name))
+                  );
+                  
+                  if (videoElements.length > 0) {
+                    // Try to detect audio by creating an audio element from the video
+                    const testAudio = new Audio();
+                    let hasAudioTrack = false;
+                    
+                    try {
+                      testAudio.src = tempUrl;
+                      testAudio.volume = 0; // Mute for testing
+                      
+                      // Check if audio can be loaded (indicates audio track exists)
+                      await new Promise((resolve, reject) => {
+                        const timeout = setTimeout(() => {
+                          reject(new Error('Timeout'));
+                        }, 2000);
+                        
+                        testAudio.addEventListener('loadedmetadata', () => {
+                          clearTimeout(timeout);
+                          // If we get here, audio track likely exists
+                          hasAudioTrack = true;
+                          resolve();
+                        });
+                        
+                        testAudio.addEventListener('error', () => {
+                          clearTimeout(timeout);
+                          resolve(); // No audio track
+                        });
+                        
+                        testAudio.load();
+                      });
+                    } catch (e) {
+                      // Assume no audio if detection fails
+                      hasAudioTrack = false;
+                    }
+                    
+                    // If audio track detected, create audio element
+                    if (hasAudioTrack) {
+                      const audioRow = rowIndex + 1; // Place audio on next row
+                      
+                      // Ensure row exists
+                      store.maxRows = Math.max(store.maxRows, audioRow + 1);
+                      
+                      // Create audio element aligned with video (same start time)
+                      store.addExistingAudio({
+                        base64Audio: tempUrl,
+                        durationMs: videoData.duration,
+                        row: audioRow,
+                        startTime: startTime, // Same start time as video to keep them aligned
+                        audioType: 'music',
+                        duration: videoData.duration,
+                        id: Date.now() + Math.random().toString(36).substring(2, 9),
+                      });
+                    }
+                  }
+                } catch (audioError) {
+                  // Video has no audio or audio detection failed - that's okay, just video
+                  // This is expected for videos without audio tracks
+                  console.log('Video has no audio track or audio detection failed (this is normal for videos without audio)');
+                }
+
+                toast.success(`Added ${file.name} to timeline`);
+              }
+            } catch (error) {
+              console.error('Error handling file drop:', error);
+              toast.error(`Failed to add ${file.name} to timeline: ${error.message}`);
+            }
+          }
           return;
         }
 
@@ -1343,72 +1538,131 @@ const TimelineRow = observer(
     });
 
     const handleFileDropWithPosition = async (file, startTime, targetRow) => {
-      if (file.type.startsWith('audio/')) {
-      } else if (file.type.startsWith('image/')) {
-        try {
-          const formData = new FormData();
-          formData.append('image', file);
-
-          const response = await uploadImage(formData);
-
-          if (response) {
-            await store.addImageLocal({
-              url: response.data.url,
-              minUrl: response.data.minUrl,
-              row: targetRow,
-              startTime: startTime,
+      // For assessment: Handle files locally using blob URLs (no backend upload needed)
+      const tempUrl = URL.createObjectURL(file);
+      
+      try {
+        if (file.type.startsWith('audio/')) {
+          const audio = new Audio();
+          const audioDuration = await new Promise((resolve) => {
+            audio.addEventListener('loadedmetadata', () => {
+              resolve(audio.duration * 1000);
             });
-          }
-        } catch (error) {
-          handleCatchError(error, 'Failed to upload image');
-        }
-      } else if (file.type.startsWith('video/')) {
-        try {
-          // Handle video locally for immediate preview
-          await store.handleVideoUpload(file);
+            audio.addEventListener('error', () => {
+              resolve(5000);
+            });
+            audio.src = tempUrl;
+          });
 
+          store.addExistingAudio({
+            base64Audio: tempUrl,
+            durationMs: audioDuration,
+            row: targetRow,
+            startTime: startTime,
+            audioType: 'music',
+            duration: audioDuration,
+            id: Date.now() + Math.random().toString(36).substring(2, 9),
+          });
+          toast.success(`Added ${file.name} to timeline`);
+        } else if (file.type.startsWith('image/')) {
+          await store.addImageLocal({
+            url: tempUrl,
+            minUrl: tempUrl,
+            row: targetRow,
+            startTime: startTime,
+          });
+          toast.success(`Added ${file.name} to timeline`);
+        } else if (file.type.startsWith('video/')) {
           // Get video duration
-          const duration = await new Promise(resolve => {
-            const video = document.createElement('video');
-            video.preload = 'metadata';
-            video.onloadedmetadata = () => {
-              resolve(video.duration * 1000); // Convert to milliseconds
-            };
-            video.src = URL.createObjectURL(file);
+          const video = document.createElement('video');
+          const videoData = await new Promise((resolve, reject) => {
+            video.addEventListener('loadedmetadata', () => {
+              resolve({
+                duration: video.duration * 1000,
+              });
+            });
+            video.addEventListener('error', () => {
+              reject(new Error('Failed to load video metadata'));
+            });
+            video.src = tempUrl;
+            video.load();
           });
 
-          // Upload to AWS in the background
-          const { url, key } = await uploadVideoToAWS(file, progress => {
-            // Progress callback for video upload
-          });
+          const videoDuration = videoData.duration;
 
-          // Save video metadata
-          const videoData = {
-            key: key,
-            s3Url: url,
+          // Add video to timeline
+          await store.handleVideoUploadFromUrl({
+            url: tempUrl,
             title: file.name,
-            length: duration / 1000, // Convert back to seconds for saveVideoData
-          };
-
-          const saved = await saveVideoData(
-            videoData,
-            store.currentStoryId,
-            user
-          );
-
-          // Update store with uploaded video
-          store.handleVideoUploadFromUrl({
-            url: url,
-            title: file.name,
-            key: key,
-            duration: duration,
+            key: null,
+            duration: videoDuration,
             row: targetRow,
             startTime: startTime,
             isNeedLoader: false,
           });
-        } catch (error) {
-          handleCatchError(error, 'Failed to upload video');
+
+          // Check if video has audio and create audio track
+          try {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            const videoElements = store.editorElements.filter(
+              el => el.type === 'video' && (el.properties?.src === tempUrl || el.src === tempUrl || el.properties?.src?.includes(file.name))
+            );
+            
+            if (videoElements.length > 0) {
+              const testAudio = new Audio();
+              let hasAudioTrack = false;
+              
+              try {
+                testAudio.src = tempUrl;
+                testAudio.volume = 0;
+                
+                await new Promise((resolve, reject) => {
+                  const timeout = setTimeout(() => {
+                    reject(new Error('Timeout'));
+                  }, 2000);
+                  
+                  testAudio.addEventListener('loadedmetadata', () => {
+                    clearTimeout(timeout);
+                    hasAudioTrack = true;
+                    resolve();
+                  });
+                  
+                  testAudio.addEventListener('error', () => {
+                    clearTimeout(timeout);
+                    resolve();
+                  });
+                  
+                  testAudio.load();
+                });
+              } catch (e) {
+                hasAudioTrack = false;
+              }
+              
+              if (hasAudioTrack) {
+                const audioRow = targetRow + 1;
+                store.maxRows = Math.max(store.maxRows, audioRow + 1);
+                
+                store.addExistingAudio({
+                  base64Audio: tempUrl,
+                  durationMs: videoDuration,
+                  row: audioRow,
+                  startTime: startTime,
+                  audioType: 'music',
+                  duration: videoDuration,
+                  id: Date.now() + Math.random().toString(36).substring(2, 9),
+                });
+              }
+            }
+          } catch (audioError) {
+            console.log('Video has no audio track or audio detection failed');
+          }
+
+          toast.success(`Added ${file.name} to timeline`);
         }
+      } catch (error) {
+        console.error('Error handling file drop:', error);
+        toast.error(`Failed to add ${file.name} to timeline: ${error.message}`);
       }
     };
 
@@ -1446,90 +1700,159 @@ const TimelineRow = observer(
           }
         }
 
-        if (
-          file.type.startsWith('audio/') &&
-          (!overlays.length || areTypesCompatible(overlays[0]?.type, 'audio'))
-        ) {
-        } else if (file.type.startsWith('image/')) {
-          try {
-            const formData = new FormData();
-            formData.append('image', file);
-
-            const response = await uploadImage(formData);
-
-            if (response) {
-              // Check if current row is empty or compatible with imageUrl type
-              if (
-                !overlays.length ||
-                areTypesCompatible(overlays[0]?.type, 'imageUrl')
-              ) {
-                // Check if there's enough space in current row
-                const rowElements = store.editorElements.filter(
-                  el => el.row === rowIndex
-                );
-
-                // Find first available position
-                let startTime = 0;
-                let hasSpace = true;
-
-                if (rowElements.length > 0) {
-                  // Sort elements by start time
-                  const sortedElements = [...rowElements].sort(
-                    (a, b) => a.timeFrame.start - b.timeFrame.start
-                  );
-
-                  hasSpace = false; // Reset hasSpace before checking gaps
-
-                  // Check gaps between elements
-                  for (let i = 0; i <= sortedElements.length; i++) {
-                    const currentStart =
-                      i === 0 ? 0 : sortedElements[i - 1].timeFrame.end;
-                    const nextStart =
-                      i === sortedElements.length
-                        ? store.maxTime
-                        : sortedElements[i].timeFrame.start;
-
-                    if (nextStart - currentStart >= 5000) {
-                      // 5 seconds for images
-                      startTime = currentStart;
-                      hasSpace = true;
-                      break;
-                    }
-                  }
-                }
-
-                if (hasSpace) {
-                  // Add to current row
-                  await store.addImageLocal({
-                    url: response.data.url,
-                    minUrl: response.data.minUrl,
-                    row: rowIndex,
-                    startTime: startTime,
-                  });
-                } else {
-                  // Create new row and add element there
-                  store.shiftRowsDown(rowIndex + 1);
-                  await store.addImageLocal({
-                    url: response.data.url,
-                    minUrl: response.data.minUrl,
-                    row: rowIndex + 1,
-                    startTime: 0,
-                  });
-                }
-              } else {
-                // Add to new row if current row is not imageUrl type
-                await store.addImageLocal({
-                  url: response.data.url,
-                  minUrl: response.data.minUrl,
-                  row: store.maxRows,
-                  startTime: 0,
-                });
-              }
+        // For assessment: Handle files locally using blob URLs
+        const tempUrl = URL.createObjectURL(file);
+        
+        try {
+          // Calculate drop position from mouse coordinates
+          const rect = dropRef.current?.getBoundingClientRect();
+          let dropStartTime = 0;
+          if (rect) {
+            const timelineContainer = document.querySelector(
+              '[class*="timelineRowContainer"]'
+            );
+            if (timelineContainer) {
+              const containerRect = timelineContainer.getBoundingClientRect();
+              const scrollLeft = timelineContainer.scrollLeft || 0;
+              const mouseX = e.clientX - containerRect.left + scrollLeft;
+              const actualWidth = timelineContainer.scrollWidth || containerRect.width;
+              dropStartTime = Math.max(0, Math.min(store.maxTime, (mouseX / actualWidth) * store.maxTime));
+            } else {
+              const mouseX = e.clientX - rect.left;
+              dropStartTime = Math.max(0, Math.min(store.maxTime, (mouseX / rect.width) * store.maxTime));
             }
-          } catch (error) {
-            handleCatchError(error, 'Failed to upload image');
           }
-        } else if (file.type.startsWith('video/')) {
+
+          if (file.type.startsWith('audio/')) {
+            if (!overlays.length || areTypesCompatible(overlays[0]?.type, 'audio')) {
+              const audio = new Audio();
+              const audioDuration = await new Promise((resolve) => {
+                audio.addEventListener('loadedmetadata', () => {
+                  resolve(audio.duration * 1000);
+                });
+                audio.addEventListener('error', () => {
+                  resolve(5000);
+                });
+                audio.src = tempUrl;
+              });
+
+              store.addExistingAudio({
+                base64Audio: tempUrl,
+                durationMs: audioDuration,
+                row: rowIndex,
+                startTime: dropStartTime,
+                audioType: 'music',
+                duration: audioDuration,
+                id: Date.now() + Math.random().toString(36).substring(2, 9),
+              });
+              toast.success(`Added ${file.name} to timeline`);
+            }
+          } else if (file.type.startsWith('image/')) {
+            if (!overlays.length || areTypesCompatible(overlays[0]?.type, 'imageUrl')) {
+              await store.addImageLocal({
+                url: tempUrl,
+                minUrl: tempUrl,
+                row: rowIndex,
+                startTime: dropStartTime,
+              });
+              toast.success(`Added ${file.name} to timeline`);
+            } else {
+              // Add to new row if current row is not compatible
+              store.shiftRowsDown(rowIndex + 1);
+              await store.addImageLocal({
+                url: tempUrl,
+                minUrl: tempUrl,
+                row: rowIndex + 1,
+                startTime: dropStartTime,
+              });
+              toast.success(`Added ${file.name} to timeline`);
+            }
+          } else if (file.type.startsWith('video/')) {
+            const video = document.createElement('video');
+            const videoData = await new Promise((resolve, reject) => {
+              video.addEventListener('loadedmetadata', () => {
+                resolve({
+                  duration: video.duration * 1000,
+                });
+              });
+              video.addEventListener('error', () => {
+                reject(new Error('Failed to load video metadata'));
+              });
+              video.src = tempUrl;
+              video.load();
+            });
+
+            await store.handleVideoUploadFromUrl({
+              url: tempUrl,
+              title: file.name,
+              key: null,
+              duration: videoData.duration,
+              row: rowIndex,
+              startTime: dropStartTime,
+              isNeedLoader: false,
+            });
+
+            // Check for audio track
+            try {
+              await new Promise(resolve => setTimeout(resolve, 100));
+              const videoElements = store.editorElements.filter(
+                el => el.type === 'video' && (el.properties?.src === tempUrl || el.src === tempUrl || el.properties?.src?.includes(file.name))
+              );
+              
+              if (videoElements.length > 0) {
+                const testAudio = new Audio();
+                let hasAudioTrack = false;
+                
+                try {
+                  testAudio.src = tempUrl;
+                  testAudio.volume = 0;
+                  
+                  await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                      reject(new Error('Timeout'));
+                    }, 2000);
+                    
+                    testAudio.addEventListener('loadedmetadata', () => {
+                      clearTimeout(timeout);
+                      hasAudioTrack = true;
+                      resolve();
+                    });
+                    
+                    testAudio.addEventListener('error', () => {
+                      clearTimeout(timeout);
+                      resolve();
+                    });
+                    
+                    testAudio.load();
+                  });
+                } catch (e) {
+                  hasAudioTrack = false;
+                }
+                
+                if (hasAudioTrack) {
+                  const audioRow = rowIndex + 1;
+                  store.maxRows = Math.max(store.maxRows, audioRow + 1);
+                  
+                  store.addExistingAudio({
+                    base64Audio: tempUrl,
+                    durationMs: videoData.duration,
+                    row: audioRow,
+                    startTime: dropStartTime,
+                    audioType: 'music',
+                    duration: videoData.duration,
+                    id: Date.now() + Math.random().toString(36).substring(2, 9),
+                  });
+                }
+              }
+            } catch (audioError) {
+              console.log('Video has no audio track');
+            }
+
+            toast.success(`Added ${file.name} to timeline`);
+          }
+        } catch (error) {
+          console.error('Error handling file drop:', error);
+          toast.error(`Failed to add ${file.name} to timeline: ${error.message}`);
         }
       }
     };

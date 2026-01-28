@@ -4663,13 +4663,33 @@ export class Store {
       videoElement.preload = 'auto';
       videoElement.playsInline = true;
       videoElement.muted = true;
-      videoElement.crossOrigin = 'anonymous';
-      videoElement.src = `${url}?v=${Date.now()}`;
+      // For blob URLs, don't set crossOrigin (it can cause CORS issues with blob URLs)
+      // Only set crossOrigin for regular HTTP/HTTPS URLs
+      if (!url.startsWith('blob:')) {
+        videoElement.crossOrigin = 'anonymous';
+      }
+      // For blob URLs, use directly without cache busting (blob URLs don't need it and break with query params)
+      // Strip any existing query parameters from blob URLs (they shouldn't have any, but just in case)
+      // Only add cache busting for regular HTTP/HTTPS URLs
+      let finalVideoUrl;
+      if (url.startsWith('blob:')) {
+        // Remove any query parameters that might have been incorrectly added
+        const blobUrlWithoutParams = url.split('?')[0];
+        finalVideoUrl = blobUrlWithoutParams;
+      } else {
+        finalVideoUrl = `${url}?v=${Date.now()}`;
+      }
+      videoElement.src = finalVideoUrl;
       videoElement.style.display = 'none';
       videoElement.muted = false;
       videoElement.volume = 1.0;
       videoElement.controls = true;
       document.body.appendChild(videoElement);
+      
+      // For blob URLs, explicitly call load() to ensure the video loads
+      if (url.startsWith('blob:')) {
+        videoElement.load();
+      }
 
       const videoId = key || `video-${Math.random().toString(36).substr(2, 9)}`;
       videoElement.id = `video-${videoId}`;
@@ -4919,7 +4939,7 @@ export class Store {
             },
             properties: {
               elementId: `video-${videoId}`,
-              src: url,
+              src: finalVideoUrl, // Store the final URL (blob URLs without query params)
               effect: { type: 'none' },
               width: videoElement.videoWidth,
               height: videoElement.videoHeight,
@@ -4992,7 +5012,7 @@ export class Store {
                   properties: {
                     ...tempElement.properties,
                     elementId: `video-${videoId}`,
-                    src: url,
+                    src: finalVideoUrl, // Store the final URL (blob URLs without query params)
                     thumbnails,
                     thumbnailDuration: videoDurationMs / thumbnails.length,
                     duration: videoDurationMs,
@@ -5038,7 +5058,7 @@ export class Store {
               row: targetRow,
               properties: {
                 elementId: `video-${videoId}`,
-                src: url,
+                src: finalVideoUrl, // Store the final URL (blob URLs without query params)
                 effect: { type: 'none' },
                 width: videoElement.videoWidth,
                 height: videoElement.videoHeight,
@@ -5183,15 +5203,17 @@ export class Store {
     return new Promise((resolve, reject) => {
       const imageElement = new Image();
       imageElement.crossOrigin = 'Anonymous';
-      // Add cache busting parameter to force fresh CORS load
-      const cacheBustUrl =
-        url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now();
-      imageElement.src = cacheBustUrl;
+      // For blob URLs, use directly without cache busting (blob URLs don't need it)
+      // Only add cache busting for regular URLs
+      const finalUrl = url.startsWith('blob:') 
+        ? url 
+        : url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now();
+      imageElement.src = finalUrl;
 
       imageElement.onload = () => {
         try {
           fabric.Image.fromURL(
-            cacheBustUrl,
+            finalUrl,
             img => {
               const canvasWidth = this.canvas.width;
               const maxCanvasHeight = this.canvas.height;
@@ -6027,8 +6049,13 @@ export class Store {
       videoElement.preload = 'auto';
       videoElement.playsInline = true;
       videoElement.muted = true;
-      videoElement.crossOrigin = 'anonymous';
-      videoElement.src = src;
+      // For blob URLs, don't set crossOrigin (it can cause CORS issues with blob URLs)
+      if (!src.startsWith('blob:')) {
+        videoElement.crossOrigin = 'anonymous';
+      }
+      // For blob URLs, use directly without modification
+      const finalSrc = src.startsWith('blob:') ? src : src;
+      videoElement.src = finalSrc;
       videoElement.style.display = 'none';
       videoElement.controls = true;
       videoElement.id = properties?.elementId || `video-${id}`;
@@ -9819,8 +9846,10 @@ export class Store {
         mediaRecorder.stop();
       }
 
-      // Restore audio elements after error
-      await restoreAudioElements(audioElements);
+      // Restore audio elements after error (only if audioElements was defined)
+      if (typeof audioElements !== 'undefined' && audioElements) {
+        await restoreAudioElements(audioElements);
+      }
       this.updateTimeTo(0);
       this.refreshElements();
 
@@ -9903,6 +9932,11 @@ export class Store {
           }
         }
       }
+
+      // Generate filename
+      const fileExtension = this.selectedVideoFormat === 'mp4' ? 'mp4' : 'webm';
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `video-${timestamp}.${fileExtension}`;
 
       const mediaRecorder = new MediaRecorder(stream, options);
       const chunks = [];
@@ -10459,6 +10493,203 @@ export class Store {
       );
     }
   }
+
+  // Split methods for cutting timeline items
+  splitVideoElement = action((element, splitPoint) => {
+    if (!element || element.type !== 'video') {
+      console.error('Invalid element for video split');
+      return;
+    }
+
+    // Validate split point
+    const minTime = element.timeFrame.start;
+    const maxTime = element.timeFrame.end;
+    const validatedSplitPoint = Math.max(
+      minTime + 100, // Minimum 100ms for first part
+      Math.min(maxTime - 100, splitPoint) // Minimum 100ms for second part
+    );
+
+    if (validatedSplitPoint <= minTime || validatedSplitPoint >= maxTime) {
+      console.warn('Split point too close to edges');
+      return;
+    }
+
+    // Calculate video offset for second part
+    const originalVideoOffset = element.properties.videoOffset || 0;
+    const firstPartDuration = validatedSplitPoint - minTime;
+    const secondPartVideoOffset = originalVideoOffset + firstPartDuration;
+
+    // Create first part (keep original element, just update end time)
+    const firstPart = {
+      ...element,
+      timeFrame: {
+        start: element.timeFrame.start,
+        end: validatedSplitPoint,
+      },
+    };
+
+    // Create second part (new element)
+    const secondPartId = getUid();
+    const secondPart = {
+      ...element,
+      id: secondPartId,
+      name: `${element.name} (Part 2)`,
+      timeFrame: {
+        start: validatedSplitPoint,
+        end: element.timeFrame.end,
+      },
+      properties: {
+        ...element.properties,
+        videoOffset: secondPartVideoOffset,
+      },
+    };
+
+    // Find current element index
+    const currentIndex = this.editorElements.findIndex(el => el.id === element.id);
+    if (currentIndex === -1) return;
+
+    // Update first part
+    this.updateEditorElement(firstPart);
+
+    // Insert second part right after first part
+    const newElements = [...this.editorElements];
+    newElements.splice(currentIndex + 1, 0, secondPart);
+    this.editorElements = newElements;
+
+    // Refresh and save
+    this.refreshElements();
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+  });
+
+  splitAudioElement = action((element, splitPoint) => {
+    if (!element || element.type !== 'audio') {
+      console.error('Invalid element for audio split');
+      return;
+    }
+
+    // Validate split point
+    const minTime = element.timeFrame.start;
+    const maxTime = element.timeFrame.end;
+    const validatedSplitPoint = Math.max(
+      minTime + 100, // Minimum 100ms for first part
+      Math.min(maxTime - 100, splitPoint) // Minimum 100ms for second part
+    );
+
+    if (validatedSplitPoint <= minTime || validatedSplitPoint >= maxTime) {
+      console.warn('Split point too close to edges');
+      return;
+    }
+
+    // Calculate audio offset for second part
+    const originalAudioOffset = element.properties.audioOffset || 0;
+    const firstPartDuration = validatedSplitPoint - minTime;
+    const secondPartAudioOffset = originalAudioOffset + firstPartDuration;
+
+    // Create first part
+    const firstPart = {
+      ...element,
+      timeFrame: {
+        start: element.timeFrame.start,
+        end: validatedSplitPoint,
+      },
+    };
+
+    // Create second part
+    const secondPartId = getUid();
+    const secondPart = {
+      ...element,
+      id: secondPartId,
+      name: `${element.name} (Part 2)`,
+      timeFrame: {
+        start: validatedSplitPoint,
+        end: element.timeFrame.end,
+      },
+      properties: {
+        ...element.properties,
+        audioOffset: secondPartAudioOffset,
+      },
+    };
+
+    // Find current element index
+    const currentIndex = this.editorElements.findIndex(el => el.id === element.id);
+    if (currentIndex === -1) return;
+
+    // Update first part
+    this.updateEditorElement(firstPart);
+
+    // Insert second part
+    const newElements = [...this.editorElements];
+    newElements.splice(currentIndex + 1, 0, secondPart);
+    this.editorElements = newElements;
+
+    // Refresh and save
+    this.refreshElements();
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+  });
+
+  splitImageElement = action((element, splitPoint) => {
+    if (!element || (element.type !== 'imageUrl' && element.type !== 'image')) {
+      console.error('Invalid element for image split');
+      return;
+    }
+
+    // Validate split point
+    const minTime = element.timeFrame.start;
+    const maxTime = element.timeFrame.end;
+    const validatedSplitPoint = Math.max(
+      minTime + 100, // Minimum 100ms for first part
+      Math.min(maxTime - 100, splitPoint) // Minimum 100ms for second part
+    );
+
+    if (validatedSplitPoint <= minTime || validatedSplitPoint >= maxTime) {
+      console.warn('Split point too close to edges');
+      return;
+    }
+
+    // For images, splitting just creates two separate image clips
+    // Create first part
+    const firstPart = {
+      ...element,
+      timeFrame: {
+        start: element.timeFrame.start,
+        end: validatedSplitPoint,
+      },
+    };
+
+    // Create second part (duplicate image)
+    const secondPartId = getUid();
+    const secondPart = {
+      ...element,
+      id: secondPartId,
+      name: `${element.name} (Part 2)`,
+      timeFrame: {
+        start: validatedSplitPoint,
+        end: element.timeFrame.end,
+      },
+    };
+
+    // Find current element index
+    const currentIndex = this.editorElements.findIndex(el => el.id === element.id);
+    if (currentIndex === -1) return;
+
+    // Update first part
+    this.updateEditorElement(firstPart);
+
+    // Insert second part
+    const newElements = [...this.editorElements];
+    newElements.splice(currentIndex + 1, 0, secondPart);
+    this.editorElements = newElements;
+
+    // Refresh and save
+    this.refreshElements();
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+  });
 
   processVideoMoveUpdate() {
     const now = performance.now();
@@ -13778,6 +14009,214 @@ export class Store {
     this.ghostState.draggedRowIndex = null;
     this.ghostState.dragOverRowIndex = null;
     this.ghostState.rowInsertPosition = null;
+  });
+
+  // Reset all ghost state to initial values
+  resetGhostState = action(() => {
+    this.ghostState.isDragging = false;
+    this.ghostState.ghostElement = null;
+    this.ghostState.ghostMarkerPosition = null;
+    this.ghostState.draggedElement = null;
+    this.ghostState.alignmentLines = [];
+    this.ghostState.isIncompatibleRow = false;
+    this.ghostState.initialClickOffset = 0;
+    this.ghostState.initialClientX = null;
+    this.ghostState.initialElementStart = 0;
+    this.ghostState.isResizing = false;
+    this.ghostState.resizeType = null;
+    this.ghostState.resizeGhostElement = null;
+    this.ghostState.isMultiDragging = false;
+    this.ghostState.multiGhostElements = [];
+    this.ghostState.selectedElements = [];
+    this.ghostState.initialElementStarts = [];
+    this.ghostState.livePushOffsets.clear();
+    this.ghostState.isGalleryDragging = false;
+    this.ghostState.galleryGhostElement = null;
+    this.ghostState.galleryItemData = null;
+    this.ghostState.isFileDragging = false;
+    this.ghostState.fileGhostElement = null;
+    this.ghostState.fileData = null;
+    this.ghostState.isDraggingRow = false;
+    this.ghostState.draggedRowIndex = null;
+    this.ghostState.dragOverRowIndex = null;
+  });
+
+  // Start ghost drag for timeline element
+  startGhostDrag = action((element, initialClickOffset, initialTime, mode) => {
+    this.ghostState.isDragging = true;
+    this.ghostState.draggedElement = element;
+    this.ghostState.initialClickOffset = initialClickOffset || 0;
+    this.ghostState.initialElementStart = element.timeFrame.start;
+    this.ghostState.initialClientX = null; // Will be set on first hover
+  });
+
+  // Finish ghost drag - move element to final position
+  finishGhostDrag = action((finalPosition, targetRow) => {
+    if (!this.ghostState.draggedElement) {
+      this.resetGhostState();
+      return;
+    }
+
+    const element = this.ghostState.draggedElement;
+    const duration = element.timeFrame.end - element.timeFrame.start;
+    const newStartTime = Math.max(0, Math.min(this.maxTime - duration, finalPosition));
+    const newEndTime = newStartTime + duration;
+
+    // Update element position
+    element.timeFrame.start = newStartTime;
+    element.timeFrame.end = newEndTime;
+    element.row = targetRow;
+
+    // Refresh elements
+    this.refreshElements();
+
+    // Save to history
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+
+    this.resetGhostState();
+  });
+
+  // Finish multi-ghost drag
+  finishMultiGhostDrag = action((finalPosition) => {
+    if (!this.ghostState.draggedElement || this.ghostState.selectedElements.length === 0) {
+      this.resetGhostState();
+      return;
+    }
+
+    const draggedIndex = this.ghostState.selectedElements.findIndex(
+      el => el.id === this.ghostState.draggedElement.id
+    );
+    if (draggedIndex === -1) {
+      this.resetGhostState();
+      return;
+    }
+
+    const baseElement = this.ghostState.selectedElements[draggedIndex];
+    const baseStart = this.ghostState.initialElementStarts[draggedIndex];
+    const deltaTime = finalPosition - baseStart;
+
+    // Move all selected elements by the same delta
+    this.ghostState.selectedElements.forEach((el, index) => {
+      const originalStart = this.ghostState.initialElementStarts[index];
+      const duration = el.timeFrame.end - el.timeFrame.start;
+      const newStartTime = Math.max(0, Math.min(this.maxTime - duration, originalStart + deltaTime));
+      const newEndTime = newStartTime + duration;
+
+      el.timeFrame.start = newStartTime;
+      el.timeFrame.end = newEndTime;
+    });
+
+    this.refreshElements();
+
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+
+    this.resetGhostState();
+  });
+
+  // Finish gallery ghost drag
+  finishGalleryGhostDrag = action((finalPosition, targetRow, callback) => {
+    if (callback && typeof callback === 'function') {
+      callback(finalPosition, targetRow);
+    }
+    this.resetGhostState();
+  });
+
+  // Finish file ghost drag
+  finishFileGhostDrag = action((finalPosition, targetRow, callback) => {
+    if (callback && typeof callback === 'function') {
+      callback(finalPosition, targetRow);
+    }
+    this.resetGhostState();
+  });
+
+  // Finish animation ghost drag
+  finishAnimationGhostDrag = action((finalPosition, targetRow) => {
+    // Similar to finishGhostDrag but for animations
+    if (!this.ghostState.draggedElement) {
+      this.resetGhostState();
+      return;
+    }
+
+    const element = this.ghostState.draggedElement;
+    const duration = element.timeFrame.end - element.timeFrame.start;
+    const newStartTime = Math.max(0, Math.min(this.maxTime - duration, finalPosition));
+    const newEndTime = newStartTime + duration;
+
+    element.timeFrame.start = newStartTime;
+    element.timeFrame.end = newEndTime;
+    element.row = targetRow;
+
+    this.refreshElements();
+
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+
+    this.resetGhostState();
+  });
+
+  // Update ghost element position during drag (with push logic)
+  updateGhostElementWithPush = action((newPosition, targetRow, isIncompatible, draggedElement) => {
+    if (!draggedElement) return;
+
+    const duration = draggedElement.timeFrame.end - draggedElement.timeFrame.start;
+    let newStartTime = Math.max(0, Math.min(this.maxTime - duration, newPosition));
+    const newEndTime = newStartTime + duration;
+
+    // Store ghost marker position for visualization
+    this.ghostState.ghostMarkerPosition = newStartTime;
+    this.ghostState.isIncompatibleRow = isIncompatible || false;
+
+    // Create or update ghost element for preview
+    if (!this.ghostState.ghostElement) {
+      this.ghostState.ghostElement = {
+        ...draggedElement,
+        timeFrame: { start: newStartTime, end: newEndTime },
+        row: targetRow,
+        isGhost: true,
+      };
+    } else {
+      this.ghostState.ghostElement.timeFrame.start = newStartTime;
+      this.ghostState.ghostElement.timeFrame.end = newEndTime;
+      this.ghostState.ghostElement.row = targetRow;
+    }
+  });
+
+  // Update animation ghost element position during drag
+  updateAnimationGhostElementWithPush = action((newPosition, targetRow, isIncompatible, draggedElement) => {
+    // Same as updateGhostElementWithPush but for animations
+    this.updateGhostElementWithPush(newPosition, targetRow, isIncompatible, draggedElement);
+  });
+
+  // Update multi-ghost elements during drag
+  updateMultiGhostElements = action((newPosition) => {
+    if (this.ghostState.selectedElements.length === 0 || !this.ghostState.draggedElement) return;
+
+    const draggedIndex = this.ghostState.selectedElements.findIndex(
+      el => el.id === this.ghostState.draggedElement.id
+    );
+    if (draggedIndex === -1) return;
+
+    const baseStart = this.ghostState.initialElementStarts[draggedIndex];
+    const deltaTime = newPosition - baseStart;
+
+    // Update ghost elements for all selected items
+    this.ghostState.multiGhostElements = this.ghostState.selectedElements.map((el, index) => {
+      const originalStart = this.ghostState.initialElementStarts[index];
+      const duration = el.timeFrame.end - el.timeFrame.start;
+      const newStartTime = Math.max(0, Math.min(this.maxTime - duration, originalStart + deltaTime));
+      const newEndTime = newStartTime + duration;
+
+      return {
+        ...el,
+        timeFrame: { start: newStartTime, end: newEndTime },
+        isGhost: true,
+      };
+    });
   });
 
   // Delete an entire row: remove all elements in that row and shift rows above it down
