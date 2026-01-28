@@ -90,7 +90,7 @@ const TimelineGrid = observer(
         const dropPositionX = (e.clientX - gridRect.left) / gridRect.width;
         const timePosition = store.maxTime * dropPositionX;
 
-        const allElements = store.editorElements;
+        const allElements = store.editorElements || [];
 
         const findTargetRow = () => {
           const voiceoverElements = allElements.filter(
@@ -112,17 +112,44 @@ const TimelineGrid = observer(
 
         let targetRow = findTargetRow();
 
-        while (allElements.some(el => el.row === targetRow)) {
+        while (allElements.some(el => el.row === targetRow && el.type === 'audio')) {
           targetRow++;
         }
 
         for (const file of files) {
+          try {
+            const objectUrl = URL.createObjectURL(file);
+
+            const audio = new Audio();
+            const durationMs = await new Promise(resolve => {
+              audio.addEventListener('loadedmetadata', () => {
+                resolve(audio.duration ? audio.duration * 1000 : 5000);
+              });
+              audio.addEventListener('error', () => {
+                resolve(5000);
+              });
+              audio.src = objectUrl;
+            });
+
+            await store.addExistingAudio({
+              base64Audio: objectUrl,
+              durationMs,
+              row: targetRow,
+              startTime: timePosition,
+              audioType: 'voiceover',
+              duration: durationMs,
+              id: Date.now() + Math.random().toString(36).substring(2, 9),
+            });
+          } catch (err) {
+            console.error('Failed to add audio from drop:', err);
+          }
         }
       } catch (error) {
         console.error('Drag and drop processing error:', error);
       }
     };
 
+////////////////////////////////////////////
     useEffect(() => {
       const grid = gridRef.current;
       if (!grid) return;
