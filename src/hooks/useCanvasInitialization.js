@@ -27,16 +27,25 @@ if (!fabric.VideoImage) {
     _render: function (ctx) {
       try {
         ctx.save();
-        
+
         // Apply custom filter if set
         const customFilter = this.customFilter;
-        if (customFilter && customFilter !== 'none' && customFilter !== null && customFilter !== undefined) {
+        if (
+          customFilter &&
+          customFilter !== 'none' &&
+          customFilter !== null &&
+          customFilter !== undefined
+        ) {
           const filterCSS = getFilterFromEffectType(customFilter);
-          if (filterCSS && filterCSS !== 'none' && filterCSS !== 'pixi-filter') {
+          if (
+            filterCSS &&
+            filterCSS !== 'none' &&
+            filterCSS !== 'pixi-filter'
+          ) {
             ctx.filter = filterCSS;
           }
         }
-        
+
         ctx.drawImage(
           this.videoElement,
           -this.width / 2,
@@ -44,15 +53,24 @@ if (!fabric.VideoImage) {
           this.width,
           this.height
         );
-        
+
         // Reset filter
-        if (customFilter && customFilter !== 'none' && customFilter !== null && customFilter !== undefined) {
+        if (
+          customFilter &&
+          customFilter !== 'none' &&
+          customFilter !== null &&
+          customFilter !== undefined
+        ) {
           const filterCSS = getFilterFromEffectType(customFilter);
-          if (filterCSS && filterCSS !== 'none' && filterCSS !== 'pixi-filter') {
+          if (
+            filterCSS &&
+            filterCSS !== 'none' &&
+            filterCSS !== 'pixi-filter'
+          ) {
             ctx.filter = 'none';
           }
         }
-        
+
         ctx.restore();
       } catch (err) {
         console.warn('Video render error:', err);
@@ -71,12 +89,17 @@ if (!fabric.VideoImage) {
 // Extend fabric.Image to support customFilter only if not already done
 if (!fabric.Image.prototype._customFilterSupport) {
   const originalImageRender = fabric.Image.prototype._render;
-  
-  fabric.Image.prototype._render = function(ctx) {
+
+  fabric.Image.prototype._render = function (ctx) {
     // Apply custom filter if set
     const customFilter = this.customFilter;
-    
-    if (customFilter && customFilter !== 'none' && customFilter !== null && customFilter !== undefined) {
+
+    if (
+      customFilter &&
+      customFilter !== 'none' &&
+      customFilter !== null &&
+      customFilter !== undefined
+    ) {
       const filterCSS = getFilterFromEffectType(customFilter);
       if (filterCSS && filterCSS !== 'none' && filterCSS !== 'pixi-filter') {
         ctx.save();
@@ -96,10 +119,50 @@ if (!fabric.Image.prototype._customFilterSupport) {
 
   // Add customFilter property to fabric.Image prototype
   fabric.Image.prototype.customFilter = 'none';
-  
+
   // Mark that custom filter support has been added
   fabric.Image.prototype._customFilterSupport = true;
 }
+
+/**
+ * Constrains a fabric object to stay within canvas bounds
+ * Called on mouse up to snap objects back inside if they moved outside
+ */
+const constrainObjectWithinCanvas = (object, canvasWidth, canvasHeight) => {
+  if (!object) return;
+
+  // Calculate actual dimensions considering scale
+  const scaledWidth = Math.abs(object.width * object.scaleX);
+  const scaledHeight = Math.abs(object.height * object.scaleY);
+
+  let constrained = false;
+
+  // Constrain left boundary
+  if (object.left < 0) {
+    object.left = 0;
+    constrained = true;
+  }
+
+  // Constrain top boundary
+  if (object.top < 0) {
+    object.top = 0;
+    constrained = true;
+  }
+
+  // Constrain right boundary
+  if (object.left + scaledWidth > canvasWidth) {
+    object.left = Math.max(0, canvasWidth - scaledWidth);
+    constrained = true;
+  }
+
+  // Constrain bottom boundary
+  if (object.top + scaledHeight > canvasHeight) {
+    object.top = Math.max(0, canvasHeight - scaledHeight);
+    constrained = true;
+  }
+
+  return constrained;
+};
 
 export const useCanvasInitialization = (videoPanelRef, store) => {
   useEffect(() => {
@@ -111,7 +174,7 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
 
     const containerWidth = videoPanelRef.current.clientWidth;
     const containerHeight = videoPanelRef.current.clientHeight;
-    const aspectRatio = store.getAspectRatioValue() || (9 / 16);
+    const aspectRatio = store.getAspectRatioValue() || 9 / 16;
 
     let newWidth = containerWidth;
     let newHeight = containerWidth / aspectRatio;
@@ -201,10 +264,10 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
     });
 
     // Calculate canvas dimensions based on aspect ratio
-    const canvasAspectRatio = store.getAspectRatioValue() || (9 / 16);
+    const canvasAspectRatio = store.getAspectRatioValue() || 9 / 16;
     const baseWidth = 1080;
     const canvasHeight = Math.round(baseWidth / canvasAspectRatio);
-    
+
     const canvas = new fabric.Canvas('canvas', {
       width: baseWidth,
       height: canvasHeight,
@@ -253,23 +316,36 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
     document.addEventListener('keyup', handleKeyUp);
 
     // Global click handler to clear canvas selection when clicking outside canvas
-    const handleGlobalClick = (e) => {
+    const handleGlobalClick = e => {
       // Check if click is inside canvas or canvas-related elements
       const canvasElement = canvas.getElement();
       const selectionLayer = document.getElementById('selection-layer');
       const canvasContainer = document.getElementById('grid-canvas-container');
-      
+
       if (!canvasElement) return;
-      
+
       // Check if the click target is within canvas area or related UI
-      const isInsideCanvas = canvasElement.contains(e.target) || canvasElement === e.target;
-      const isInsideSelectionLayer = selectionLayer && (selectionLayer.contains(e.target) || selectionLayer === e.target);
-      const isInsideCanvasContainer = canvasContainer && (canvasContainer.contains(e.target) || canvasContainer === e.target);
-      const isControlPoint = e.target.hasAttribute && e.target.hasAttribute('data-control-point');
-      const isHandleAction = e.target.hasAttribute && e.target.hasAttribute('data-handle-action');
-      
+      const isInsideCanvas =
+        canvasElement.contains(e.target) || canvasElement === e.target;
+      const isInsideSelectionLayer =
+        selectionLayer &&
+        (selectionLayer.contains(e.target) || selectionLayer === e.target);
+      const isInsideCanvasContainer =
+        canvasContainer &&
+        (canvasContainer.contains(e.target) || canvasContainer === e.target);
+      const isControlPoint =
+        e.target.hasAttribute && e.target.hasAttribute('data-control-point');
+      const isHandleAction =
+        e.target.hasAttribute && e.target.hasAttribute('data-handle-action');
+
       // If click is outside canvas area and not on control elements, clear selection
-      if (!isInsideCanvas && !isInsideSelectionLayer && !isInsideCanvasContainer && !isControlPoint && !isHandleAction) {
+      if (
+        !isInsideCanvas &&
+        !isInsideSelectionLayer &&
+        !isInsideCanvasContainer &&
+        !isControlPoint &&
+        !isHandleAction
+      ) {
         const activeObject = canvas.getActiveObject();
         if (activeObject) {
           canvas.discardActiveObject();
@@ -437,12 +513,12 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
     });
 
     guideline.init();
-    
+
     // Store guideline reference for later use
     store.guideline = guideline;
 
     // Set CSS dimensions dynamically based on aspect ratio
-    const cssAspectRatio = store.getAspectRatioValue() || (9 / 16);
+    const cssAspectRatio = store.getAspectRatioValue() || 9 / 16;
     canvas.setDimensions(
       {
         width: `calc((100vh - 360px) * ${cssAspectRatio})`,
@@ -537,7 +613,7 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       }
 
       handleElements = [];
-      
+
       const hoverBox = document.querySelector('[data-testid*="hover-box"]');
       if (hoverBox) {
         hoverBox.style.display = 'none';
@@ -631,7 +707,7 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
 
       store.containerObserver = observer;
 
-      canvas.on('selection:created', function(e) {
+      canvas.on('selection:created', function (e) {
         // Enable controls for video objects when selected
         if (e.selected && e.selected.length > 0) {
           e.selected.forEach(obj => {
@@ -645,7 +721,7 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
         }
         createCustomSelectionOutline();
       });
-      canvas.on('selection:updated', function(e) {
+      canvas.on('selection:updated', function (e) {
         // Enable controls for video objects when selected
         if (e.selected && e.selected.length > 0) {
           e.selected.forEach(obj => {
@@ -680,7 +756,7 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
           updateControlPointsPositions(e.target);
         }
       });
-      
+
       canvas.on('object:moved', function (e) {
         // Clear guidelines after moving is complete
         setTimeout(() => {
@@ -689,7 +765,7 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
           }
         }, 100);
       });
-      
+
       canvas.on('object:modified', function (e) {
         if (e.target && selectionLayer) {
           createCustomSelectionOutline();
@@ -707,7 +783,7 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
           updateControlPointsPositions(e.target);
         }
       });
-      
+
       canvas.on('object:scaled', function (e) {
         // Clear guidelines after scaling is complete
         setTimeout(() => {
@@ -722,7 +798,7 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
           updateControlPointsPositions(e.target);
         }
       });
-      
+
       canvas.on('object:rotated', function (e) {
         // Clear guidelines after rotation is complete
         setTimeout(() => {
@@ -745,6 +821,27 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       canvas.on('mouse:up', e => {
         if (canvas.getActiveObject()) {
           lastActiveObject = canvas.getActiveObject();
+
+          // Apply boundary constraints on mouse up
+          // This allows free movement during drag but snaps back on release
+          const activeObject = canvas.getActiveObject();
+          if (activeObject) {
+            const wasConstrained = constrainObjectWithinCanvas(
+              activeObject,
+              canvas.width,
+              canvas.height
+            );
+
+            // If object was outside bounds and got constrained, update and render
+            if (wasConstrained) {
+              activeObject.setCoords();
+              canvas.requestRenderAll();
+
+              // Trigger object:modified event to update store
+              // This ensures the constrained coordinates are saved to state
+              canvas.fire('object:modified', { target: activeObject });
+            }
+          }
         }
 
         if (!isResizing && !activeControlPoint) {
@@ -826,11 +923,11 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
 
       const width = Math.sqrt(
         Math.pow(domCoords.tr.x - domCoords.tl.x, 2) +
-        Math.pow(domCoords.tr.y - domCoords.tl.y, 2)
+          Math.pow(domCoords.tr.y - domCoords.tl.y, 2)
       );
       const height = Math.sqrt(
         Math.pow(domCoords.bl.x - domCoords.tl.x, 2) +
-        Math.pow(domCoords.bl.y - domCoords.tl.y, 2)
+          Math.pow(domCoords.bl.y - domCoords.tl.y, 2)
       );
       const left = domCoords.tl.x;
       const top = domCoords.tl.y;
@@ -839,12 +936,15 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       let hoverBox = document.querySelector('[data-testid*="hover-box"]');
       if (!hoverBox) {
         hoverBox = document.createElement('div');
-        hoverBox.setAttribute('data-testid', '@editor/video-canvas/hover-box/default');
+        hoverBox.setAttribute(
+          'data-testid',
+          '@editor/video-canvas/hover-box/default'
+        );
         hoverBox.style.position = 'absolute';
         hoverBox.style.pointerEvents = 'none';
         hoverBox.style.zIndex = '1000';
-        
-       const canvasContainer = canvasEl.parentElement;
+
+        const canvasContainer = canvasEl.parentElement;
         if (canvasContainer) {
           canvasContainer.appendChild(hoverBox);
         }
@@ -1165,14 +1265,16 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
 
               if (config.proportional) {
                 // For video objects, maintain aspect ratio properly
-                const isVideoObject = activeObject.type === 'videoImage' || activeObject.type === 'CoverVideo';
-                
+                const isVideoObject =
+                  activeObject.type === 'videoImage' ||
+                  activeObject.type === 'CoverVideo';
+
                 let scaleRatio;
                 if (isVideoObject) {
                   // For video, use the dominant direction to maintain aspect ratio
                   const widthChange = Math.abs(offsetX);
                   const heightChange = Math.abs(offsetY);
-                  
+
                   if (widthChange > heightChange) {
                     scaleRatio = Math.max(0.1, newWidth / original.width);
                   } else {
