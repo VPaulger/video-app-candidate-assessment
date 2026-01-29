@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import toast from 'react-hot-toast';
 import { StoreContext } from '../../mobx';
 import { observer } from 'mobx-react';
 import styles from './Timeline.module.scss';
@@ -995,6 +996,25 @@ const TimelineItem = observer(
       }
     };
 
+    const handleRemoveSilence = async () => {
+      if (item.type === 'audio') {
+        try {
+          const result = await store.removeSilenceFromAudio(item);
+          if (result.success) {
+            toast.success(
+              `Removed ${result.leadingSilence.toFixed(0)}ms leading and ${result.trailingSilence.toFixed(0)}ms trailing silence`
+            );
+          } else {
+            toast.info(result.message || 'No silence detected');
+          }
+          setIsPopupVisible(false);
+        } catch (error) {
+          console.error('Failed to remove silence:', error);
+          toast.error(error.message || 'Failed to remove silence from audio');
+        }
+      }
+    };
+
     const scene = scenes?.find(scene => scene._id === item.pointId);
 
     const getItemContent = (type, id) => {
@@ -1969,6 +1989,7 @@ const TimelineItem = observer(
                 onSplitAudio={handleSplitAudio}
                 onSplitImage={handleSplitImage}
                 onSplitVideo={handleSplitVideo}
+                onRemoveSilence={handleRemoveSilence}
                 element={item}
               />
             )}

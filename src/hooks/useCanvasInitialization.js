@@ -675,9 +675,57 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
         }
       });
       canvas.on('object:moving', function (e) {
-        if (e.target && selectionLayer) {
-          lastActiveObject = e.target;
-          updateControlPointsPositions(e.target);
+        const obj = e.target;
+        
+        if (obj && selectionLayer) {
+          lastActiveObject = obj;
+          
+          // Apply boundary constraints to keep object within canvas
+          const boundingRect = obj.getBoundingRect(true, true);
+          
+          // Calculate object bounds
+          const objLeft = boundingRect.left;
+          const objTop = boundingRect.top;
+          const objWidth = boundingRect.width;
+          const objHeight = boundingRect.height;
+          
+          // Canvas bounds
+          const canvasWidth = canvas.width;
+          const canvasHeight = canvas.height;
+          
+          // Clamp position to keep object within canvas
+          let newLeft = obj.left;
+          let newTop = obj.top;
+          
+          // Left boundary
+          if (objLeft < 0) {
+            newLeft = obj.left - objLeft;
+          }
+          
+          // Right boundary
+          if (objLeft + objWidth > canvasWidth) {
+            newLeft = obj.left - (objLeft + objWidth - canvasWidth);
+          }
+          
+          // Top boundary
+          if (objTop < 0) {
+            newTop = obj.top - objTop;
+          }
+          
+          // Bottom boundary
+          if (objTop + objHeight > canvasHeight) {
+            newTop = obj.top - (objTop + objHeight - canvasHeight);
+          }
+          
+          // Apply clamped position
+          obj.set({
+            left: newLeft,
+            top: newTop,
+          });
+          
+          obj.setCoords(); // Update object coordinates
+          
+          updateControlPointsPositions(obj);
         }
       });
       
