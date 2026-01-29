@@ -2987,7 +2987,6 @@ function VideoCreationPage() {
   return (
     <DndProvider backend={HTML5Backend}>
       <section className={styles.wrapper}>
-        {/* Hidden file input for upload functionality */}
         <input
           type="file"
           ref={fileInputRef}
@@ -3121,11 +3120,7 @@ function VideoCreationPage() {
           </div>
         </div>
         <div className={styles.header_right}>
-          {/* Aspect Ratio Toggle */}
-          {/* <AspectRatioToggle
-            currentRatio={store.currentAspectRatio}
-            onChange={handleAspectRatioChange}
-          /> */}
+          
 
           <ScenesSyncWarning
             isVisible={isScenesOutOfSync}
@@ -3228,7 +3223,6 @@ function VideoCreationPage() {
                 const newHeight = ref.offsetHeight;
                 setTimelineHeight(newHeight);
 
-                // Adjust container padding
                 if (containerRef.current) {
                   containerRef.current.style.paddingBottom = `${newHeight}px`;
                 }
@@ -3274,7 +3268,6 @@ function VideoCreationPage() {
             </Rnd>
           </div>
         )}
-        {/* <VideoUploadPanel user={user} storyId={storyId} store={store} /> */}
       </section>
     </DndProvider>
   );

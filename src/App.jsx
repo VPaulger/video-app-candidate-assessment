@@ -11,6 +11,7 @@ import Layout from 'components/Layout/Layout';
 import { ThemeProvider } from 'components/ThemeProvider/ThemeProvider';
 import { PageProvider } from 'hooks/PageContext';
 import './theme.scss';
+import VidefyCanvasEditor from 'pages/CanvasDemoPage/VidefyCanvasEditor';
 
 
 export const App = () => {
@@ -39,6 +40,12 @@ export const App = () => {
                           <Route
                             path="createVideo/68cc5221256a17b46c56d56c"
                             element={<VideoCreationPage />}
+                          />
+                        </Route>
+                        <Route element={<Layout />}>
+                          <Route
+                            path="canvasDemo"
+                            element={<VidefyCanvasEditor />}
                           />
                         </Route>
                       </Routes>
