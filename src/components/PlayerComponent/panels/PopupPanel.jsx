@@ -14,6 +14,7 @@ const PopupPanel = ({
   splitPoint,
   onSplitAudio,
   onSplitImage,
+  onRemoveSilence,
   element, // renamed from selectedElement for clarity
 }) => {
   const popupRef = useRef(null);
@@ -90,6 +91,15 @@ const PopupPanel = ({
             }}
           >
             Split
+          </button>
+          <button
+            className={styles.popupButton}
+            onClick={() => {
+              onRemoveSilence();
+              onClose();
+            }}
+          >
+            Remove Silence
           </button>
           <button
             className={styles.popupButton}

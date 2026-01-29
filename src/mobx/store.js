@@ -8921,6 +8921,338 @@ export class Store {
     }
   }
 
+  // Split video element at specified time point
+  splitVideoElement(element, splitPoint) {
+    // Validate split point
+    if (splitPoint <= element.timeFrame.start || splitPoint >= element.timeFrame.end) {
+      console.warn('Invalid split point for video element');
+      return;
+    }
+
+    runInAction(() => {
+      // Create first clip (update existing element)
+      const firstClip = {
+        ...element,
+        timeFrame: {
+          start: element.timeFrame.start,
+          end: splitPoint,
+        },
+      };
+
+      // Create second clip (new element)
+      const secondClipId = getUid();
+      const secondClip = {
+        ...element,
+        id: secondClipId,
+        timeFrame: {
+          start: splitPoint,
+          end: element.timeFrame.end,
+        },
+      };
+
+      // Create new fabric object for second clip if original has one
+      if (element.fabricObject && this.canvas) {
+        const videoElement = document.getElementById(element.properties.elementId);
+        if (videoElement) {
+          const newFabricVideo = new fabric.VideoImage(videoElement, {
+            left: element.placement.x,
+            top: element.placement.y,
+            width: element.placement.width,
+            height: element.placement.height,
+            scaleX: element.placement.scaleX,
+            scaleY: element.placement.scaleY,
+            angle: element.placement.rotation || 0,
+            selectable: true,
+            objectCaching: false,
+            lockUniScaling: false,
+            hasControls: true,
+            hasBorders: true,
+            type: 'video',
+          });
+          
+          this.canvas.add(newFabricVideo);
+          secondClip.fabricObject = newFabricVideo;
+        }
+      }
+
+      // Update first clip
+      this.updateEditorElement(firstClip);
+
+      // Insert second clip right after first clip
+      const index = this.editorElements.findIndex(el => el.id === element.id);
+      if (index !== -1) {
+        this.editorElements.splice(index + 1, 0, secondClip);
+      }
+
+      // Trigger Redux sync
+      if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+        window.dispatchSaveTimelineState(this);
+      }
+
+      // Refresh display
+      this.refreshElements();
+    });
+  }
+
+  // Split audio element at specified time point
+  splitAudioElement(element, splitPoint) {
+    // Validate split point
+    if (splitPoint <= element.timeFrame.start || splitPoint >= element.timeFrame.end) {
+      console.warn('Invalid split point for audio element');
+      return;
+    }
+
+    runInAction(() => {
+      // Create first clip (update existing element)
+      const firstClip = {
+        ...element,
+        timeFrame: {
+          start: element.timeFrame.start,
+          end: splitPoint,
+        },
+      };
+
+      // Create second clip (new element)
+      const secondClipId = getUid();
+      const secondClip = {
+        ...element,
+        id: secondClipId,
+        timeFrame: {
+          start: splitPoint,
+          end: element.timeFrame.end,
+        },
+      };
+
+      // Update first clip
+      this.updateEditorElement(firstClip);
+
+      // Insert second clip right after first clip
+      const index = this.editorElements.findIndex(el => el.id === element.id);
+      if (index !== -1) {
+        this.editorElements.splice(index + 1, 0, secondClip);
+      }
+
+      // Trigger Redux sync
+      if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+        window.dispatchSaveTimelineState(this);
+      }
+
+      // Refresh display
+      this.refreshElements();
+    });
+  }
+
+  // Split image element at specified time point
+  splitImageElement(element, splitPoint) {
+    // Validate split point
+    if (splitPoint <= element.timeFrame.start || splitPoint >= element.timeFrame.end) {
+      console.warn('Invalid split point for image element');
+      return;
+    }
+
+    runInAction(() => {
+      // Create first clip (update existing element)
+      const firstClip = {
+        ...element,
+        timeFrame: {
+          start: element.timeFrame.start,
+          end: splitPoint,
+        },
+      };
+
+      // Create second clip (new element)
+      const secondClipId = getUid();
+      const secondClip = {
+        ...element,
+        id: secondClipId,
+        timeFrame: {
+          start: splitPoint,
+          end: element.timeFrame.end,
+        },
+      };
+
+      // Create new fabric object for second clip if original has one
+      if (element.fabricObject && this.canvas) {
+        // Clone the fabric image object
+        element.fabricObject.clone((clonedObj) => {
+          clonedObj.set({
+            left: element.placement.x,
+            top: element.placement.y,
+            scaleX: element.placement.scaleX,
+            scaleY: element.placement.scaleY,
+            angle: element.placement.rotation || 0,
+            selectable: true,
+          });
+          
+          this.canvas.add(clonedObj);
+          secondClip.fabricObject = clonedObj;
+          
+          // Update first clip
+          this.updateEditorElement(firstClip);
+
+          // Insert second clip right after first clip
+          const index = this.editorElements.findIndex(el => el.id === element.id);
+          if (index !== -1) {
+            this.editorElements.splice(index + 1, 0, secondClip);
+          }
+
+          // Trigger Redux sync
+          if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+            window.dispatchSaveTimelineState(this);
+          }
+
+          // Refresh display
+          this.refreshElements();
+        });
+      } else {
+        // No fabric object, just update elements
+        this.updateEditorElement(firstClip);
+
+        const index = this.editorElements.findIndex(el => el.id === element.id);
+        if (index !== -1) {
+          this.editorElements.splice(index + 1, 0, secondClip);
+        }
+
+        if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+          window.dispatchSaveTimelineState(this);
+        }
+
+        this.refreshElements();
+      }
+    });
+  }
+
+  // Remove silence from audio element
+  async removeSilenceFromAudio(element) {
+    // Save state for undo
+    this.saveToHistory();
+
+    try {
+      // 1. Get audio element
+      const audioElement = document.getElementById(element.properties.elementId);
+      if (!audioElement) {
+        throw new Error('Audio element not found');
+      }
+
+      // 2. Create audio context and fetch audio data
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      
+      // Get audio source URL
+      const audioSrc = element.properties.src || element.properties.base64Audio;
+      if (!audioSrc) {
+        throw new Error('Audio source not found');
+      }
+
+      // Fetch and decode audio
+      const response = await fetch(audioSrc);
+      const arrayBuffer = await response.arrayBuffer();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      
+      // 3. Detect silence
+      const { leadingSilence, trailingSilence } = this.detectSilence(audioBuffer);
+      
+      // 4. Validate - check if any silence was detected
+      if (leadingSilence === 0 && trailingSilence === 0) {
+        // No silence detected
+        audioContext.close();
+        return { success: false, message: 'No silence detected' };
+      }
+      
+      // 5. Calculate new timeframe
+      const originalDuration = element.timeFrame.end - element.timeFrame.start;
+      const newStart = element.timeFrame.start + leadingSilence;
+      const newEnd = element.timeFrame.end - trailingSilence;
+      const newDuration = newEnd - newStart;
+      
+      // 6. Validate minimum duration
+      if (newDuration < 100) {
+        audioContext.close();
+        throw new Error('Clip would be too short after removing silence (minimum 100ms required)');
+      }
+      
+      // 7. Update element
+      runInAction(() => {
+        const updatedElement = {
+          ...element,
+          timeFrame: {
+            start: newStart,
+            end: newEnd,
+          },
+        };
+        
+        this.updateEditorElement(updatedElement);
+        
+        // Trigger Redux sync
+        if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+          window.dispatchSaveTimelineState(this);
+        }
+        
+        this.refreshElements();
+      });
+      
+      // Clean up audio context
+      audioContext.close();
+      
+      return { 
+        success: true, 
+        leadingSilence, 
+        trailingSilence,
+        newDuration 
+      };
+      
+    } catch (error) {
+      console.error('Error removing silence:', error);
+      throw error;
+    }
+  }
+
+  // Helper method to detect silence in audio buffer
+  detectSilence(audioBuffer, threshold = 0.00316) {
+    // threshold = 0.00316 corresponds to approximately -50dB
+    const channelData = audioBuffer.getChannelData(0);
+    const sampleRate = audioBuffer.sampleRate;
+    const totalSamples = channelData.length;
+    
+    // Find first non-silent sample (leading silence)
+    let leadingSilenceSamples = 0;
+    for (let i = 0; i < totalSamples; i++) {
+      if (Math.abs(channelData[i]) > threshold) {
+        leadingSilenceSamples = i;
+        break;
+      }
+    }
+    
+    // If entire audio is silence
+    if (leadingSilenceSamples === 0 && Math.abs(channelData[0]) <= threshold) {
+      // Check if all samples are silent
+      let allSilent = true;
+      for (let i = 0; i < Math.min(totalSamples, 1000); i++) {
+        if (Math.abs(channelData[i]) > threshold) {
+          allSilent = false;
+          break;
+        }
+      }
+      if (allSilent) {
+        leadingSilenceSamples = totalSamples;
+      }
+    }
+    
+    // Find last non-silent sample (trailing silence)
+    let trailingSilenceSamples = 0;
+    for (let i = totalSamples - 1; i >= 0; i--) {
+      if (Math.abs(channelData[i]) > threshold) {
+        trailingSilenceSamples = totalSamples - 1 - i;
+        break;
+      }
+    }
+    
+    // Convert samples to milliseconds
+    const leadingSilence = (leadingSilenceSamples / sampleRate) * 1000;
+    const trailingSilence = (trailingSilenceSamples / sampleRate) * 1000;
+    
+    return { leadingSilence, trailingSilence };
+  }
+
   addEditorElement(editorElement, isImageUrl = false) {
     // Create audio element first if it's an audio type
     if (editorElement.type === 'audio') {
