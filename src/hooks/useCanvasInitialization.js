@@ -408,6 +408,28 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       if (canvas.isDrawingMode) {
         endDrawing();
       }
+
+       // Check if object was dragged completely outside canvas
+      const activeObj = canvas.getActiveObject();
+      if (activeObj && !canvas.isDrawingMode) {
+        const { width, height } = canvas;
+        const rect = activeObj.getBoundingRect(true, true);
+
+        // Use a simplified boundary check
+        const isOffCanvas = 
+          rect.left + rect.width <= 0 || 
+          rect.left >= width || 
+          rect.top + rect.height <= 0 || 
+          rect.top >= height;
+
+        if (isOffCanvas) {
+          // Fabric's native method is faster and handles origin/scaling automatically
+          canvas.centerObject(activeObj);
+          
+          activeObj.setCoords();
+          canvas.renderAll();
+        }
+      }
     });
 
     store.updateBrushSettings = settings => {
@@ -681,26 +703,80 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
         }
       });
       
-      canvas.on('object:moved', function (e) {
-        // Clear guidelines after moving is complete
-        setTimeout(() => {
-          if (!canvas.getActiveObject()) {
-            store.clearGuidelines();
-          }
-        }, 100);
+      canvas.on('object:moved', (e) => {
+        const obj = e.target;
+        if (!obj) return;
+
+        const { width: cW, height: cH } = canvas;
+        const rect = obj.getBoundingRect(true, true);
+
+        // 1. Optimized Boundary Check
+        const isOffCanvas = 
+          rect.left + rect.width <= 0 || 
+          rect.left >= cW || 
+          rect.top + rect.height <= 0 || 
+          rect.top >= cH;
+
+        if (isOffCanvas) {
+          // Use Fabric's native centering (handles scaling and origin automatically)
+          canvas.centerObject(obj);
+          
+          // Update coordinates and re-render
+          obj.setCoords();
+          canvas.renderAll();
+        }
+
+        // 2. Optimized Guideline Cleanup
+        // We use requestAnimationFrame or a direct check to avoid the 'heavy' 100ms lag
+        if (!canvas.getActiveObject()) {
+          store.clearGuidelines();
+        } else {
+          // If you specifically need a delay to wait for a "click-off", keep the timeout 
+          // but clear it if the function runs again to prevent memory leaks.
+          setTimeout(() => {
+            if (!canvas.getActiveObject()) store.clearGuidelines();
+          }, 100);
+        }
       });
       
-      canvas.on('object:modified', function (e) {
-        if (e.target && selectionLayer) {
+      canvas.on('object:modified', (e) => {
+        const obj = e.target;
+        if (!obj) return;
+
+        const { width: cW, height: cH } = canvas;
+        const rect = obj.getBoundingRect(true, true);
+
+        // 1. Unified Boundary Check
+        const isOffCanvas = 
+          rect.left + rect.width <= 0 || 
+          rect.left >= cW || 
+          rect.top + rect.height <= 0 || 
+          rect.top >= cH;
+
+        if (isOffCanvas) {
+          // Use Fabric's native centering to handle complex origins and scales
+          canvas.centerObject(obj);
+          obj.setCoords();
+          canvas.renderAll();
+        }
+
+        // 2. UI Updates
+        // If the object was modified but is still selected, update the custom outline
+        if (selectionLayer) {
           createCustomSelectionOutline();
         }
-        // Clear guidelines after object modification is complete
-        setTimeout(() => {
-          if (!canvas.getActiveObject()) {
-            store.clearGuidelines();
-          }
-        }, 100);
+
+        // 3. Guideline Cleanup
+        // Optimization: Only trigger the timeout if guidelines actually exist in the store
+        if (store.guidelines?.length > 0) {
+          setTimeout(() => {
+            if (!canvas.getActiveObject()) {
+              store.clearGuidelines();
+            }
+          }, 100);
+        }
       });
+
       canvas.on('object:scaling', function (e) {
         if (e.target && selectionLayer) {
           lastActiveObject = e.target;
