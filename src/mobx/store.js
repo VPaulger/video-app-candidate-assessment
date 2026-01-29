@@ -1,18 +1,18 @@
-import { makeAutoObservable, observable, action, runInAction } from 'mobx';
-import { fabric } from 'fabric';
-import { getUid, isHtmlAudioElement, isHtmlVideoElement } from '../utils';
-import MP4Box from 'mp4box';
 import anime from 'animejs';
+import { fabric } from 'fabric';
+import { action, makeAutoObservable, observable, runInAction } from 'mobx';
+import MP4Box from 'mp4box';
 import { v4 as uuidv4 } from 'uuid';
 import { convertCurveToEasing } from '../components/PlayerComponent/entity/AnimationResource';
-import { GLTransitionRenderer } from '../utils/gl-transitions';
-import { captureFabricObjectState } from '../utils/fabric-utils';
-import {
-  refreshAnimationsUtil,
-  updateTimeToUtil,
-  refreshElementsUtil,
-} from './store-modules';
+import { getUid, isHtmlAudioElement, isHtmlVideoElement } from '../utils';
 import { handleCatchError } from '../utils/errorHandler';
+import { captureFabricObjectState } from '../utils/fabric-utils';
+import { GLTransitionRenderer } from '../utils/gl-transitions';
+import {
+    refreshAnimationsUtil,
+    refreshElementsUtil,
+    updateTimeToUtil,
+} from './store-modules';
 
 export class Store {
   constructor() {
@@ -8919,6 +8919,210 @@ export class Store {
         window.dispatchSaveTimelineState(this);
       }
     }
+  }
+
+  // Split functions for timeline items
+  splitVideoElement(element, splitPoint) {
+    runInAction(() => {
+      // Validate split point
+      if (
+        splitPoint <= element.timeFrame.start ||
+        splitPoint >= element.timeFrame.end
+      ) {
+        console.warn('Split point must be within element timeframe');
+        return;
+      }
+
+      // Check minimum duration (100ms minimum for each part)
+      const minDuration = 100;
+      const firstPartDuration = splitPoint - element.timeFrame.start;
+      const secondPartDuration = element.timeFrame.end - splitPoint;
+
+      if (firstPartDuration < minDuration || secondPartDuration < minDuration) {
+        console.warn('Split would create clips shorter than minimum duration');
+        return;
+      }
+
+      // Calculate trim times for video
+      const originalDuration = element.properties.duration || ((element.timeFrame.end - element.timeFrame.start) / 1000);
+      const originalTrimStart = element.properties.trimStart || 0;
+      const originalTrimEnd = element.properties.trimEnd || originalDuration;
+
+      // Calculate new trim positions
+      const splitTimeInVideo = originalTrimStart + ((splitPoint - element.timeFrame.start) / 1000);
+
+      const firstPart = {
+        ...element,
+        id: getUid(),
+        timeFrame: {
+          start: element.timeFrame.start,
+          end: splitPoint,
+        },
+        properties: {
+          ...element.properties,
+          trimStart: originalTrimStart,
+          trimEnd: splitTimeInVideo,
+        },
+      };
+
+      const secondPart = {
+        ...element,
+        id: getUid(),
+        timeFrame: {
+          start: splitPoint,
+          end: element.timeFrame.end,
+        },
+        properties: {
+          ...element.properties,
+          trimStart: splitTimeInVideo,
+          trimEnd: originalTrimEnd,
+        },
+      };
+
+      // Replace original with both parts
+      const index = this.editorElements.findIndex(el => el.id === element.id);
+      if (index !== -1) {
+        this.editorElements.splice(index, 1, firstPart, secondPart);
+        this.refreshElements();
+
+        // Save to history if not in undo/redo
+        if (!this.isUndoRedoOperation && window.dispatchSaveTimelineState) {
+          window.dispatchSaveTimelineState(this);
+        }
+      }
+    });
+  }
+
+  splitAudioElement(element, splitPoint) {
+    runInAction(() => {
+      // Validate split point
+      if (
+        splitPoint <= element.timeFrame.start ||
+        splitPoint >= element.timeFrame.end
+      ) {
+        console.warn('Split point must be within element timeframe');
+        return;
+      }
+
+      // Check minimum duration (100ms minimum for each part)
+      const minDuration = 100;
+      const firstPartDuration = splitPoint - element.timeFrame.start;
+      const secondPartDuration = element.timeFrame.end - splitPoint;
+
+      if (firstPartDuration < minDuration || secondPartDuration < minDuration) {
+        console.warn('Split would create clips shorter than minimum duration');
+        return;
+      }
+
+      // Calculate audio offset for second part
+      const originalOffset = element.properties.audioOffset || 0;
+      const splitOffsetMs = splitPoint - element.timeFrame.start;
+
+      const firstPart = {
+        ...element,
+        id: getUid(),
+        timeFrame: {
+          start: element.timeFrame.start,
+          end: splitPoint,
+        },
+        properties: {
+          ...element.properties,
+          audioOffset: originalOffset,
+        },
+      };
+
+      const secondPart = {
+        ...element,
+        id: getUid(),
+        timeFrame: {
+          start: splitPoint,
+          end: element.timeFrame.end,
+        },
+        properties: {
+          ...element.properties,
+          audioOffset: originalOffset + splitOffsetMs,
+          elementId: `audio-${getUid()}`, // New audio element ID
+        },
+      };
+
+      // Replace original with both parts
+      const index = this.editorElements.findIndex(el => el.id === element.id);
+      if (index !== -1) {
+        // Remove old audio element
+        const audioElement = document.getElementById(element.properties.elementId);
+        if (audioElement) {
+          audioElement.remove();
+        }
+
+        this.editorElements.splice(index, 1, firstPart, secondPart);
+        this.refreshElements();
+
+        // Save to history if not in undo/redo
+        if (!this.isUndoRedoOperation && window.dispatchSaveTimelineState) {
+          window.dispatchSaveTimelineState(this);
+        }
+      }
+    });
+  }
+
+  splitImageElement(element, splitPoint) {
+    runInAction(() => {
+      // Validate split point
+      if (
+        splitPoint <= element.timeFrame.start ||
+        splitPoint >= element.timeFrame.end
+      ) {
+        console.warn('Split point must be within element timeframe');
+        return;
+      }
+
+      // Check minimum duration (100ms minimum for each part)
+      const minDuration = 100;
+      const firstPartDuration = splitPoint - element.timeFrame.start;
+      const secondPartDuration = element.timeFrame.end - splitPoint;
+
+      if (firstPartDuration < minDuration || secondPartDuration < minDuration) {
+        console.warn('Split would create clips shorter than minimum duration');
+        return;
+      }
+
+      // For images, both parts show the same content but occupy different time segments
+      const firstPart = {
+        ...element,
+        id: getUid(),
+        timeFrame: {
+          start: element.timeFrame.start,
+          end: splitPoint,
+        },
+        properties: {
+          ...element.properties,
+        },
+      };
+
+      const secondPart = {
+        ...element,
+        id: getUid(),
+        timeFrame: {
+          start: splitPoint,
+          end: element.timeFrame.end,
+        },
+        properties: {
+          ...element.properties,
+        },
+      };
+
+      // Replace original with both parts
+      const index = this.editorElements.findIndex(el => el.id === element.id);
+      if (index !== -1) {
+        this.editorElements.splice(index, 1, firstPart, secondPart);
+        this.refreshElements();
+
+        // Save to history if not in undo/redo
+        if (!this.isUndoRedoOperation && window.dispatchSaveTimelineState) {
+          window.dispatchSaveTimelineState(this);
+        }
+      }
+    });
   }
 
   addEditorElement(editorElement, isImageUrl = false) {

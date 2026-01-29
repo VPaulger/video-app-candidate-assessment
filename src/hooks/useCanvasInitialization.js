@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
 import { fabric } from 'fabric';
 import { AlignGuidelines } from 'fabric-guideline-plugin';
+import { useEffect } from 'react';
 
 // Import filter utility
 import { getFilterFromEffectType } from '../utils/fabric-utils';
@@ -682,6 +682,70 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       });
       
       canvas.on('object:moved', function (e) {
+        const obj = e.target;
+        
+        if (obj) {
+          // Snap back to canvas bounds after dragging
+          const objBoundingRect = obj.getBoundingRect(true);
+          const canvasWidth = canvas.width;
+          const canvasHeight = canvas.height;
+          
+          let needsAdjustment = false;
+          let newLeft = obj.left;
+          let newTop = obj.top;
+          
+          // Debug logging
+          console.log('Object moved - Bounds check:', {
+            objLeft: objBoundingRect.left,
+            objTop: objBoundingRect.top,
+            objRight: objBoundingRect.left + objBoundingRect.width,
+            objBottom: objBoundingRect.top + objBoundingRect.height,
+            canvasWidth,
+            canvasHeight
+          });
+          
+          // Check and adjust horizontal position
+          if (objBoundingRect.left < 0) {
+            newLeft = obj.left - objBoundingRect.left;
+            needsAdjustment = true;
+            console.log('Adjusting left: overflow by', objBoundingRect.left);
+          } else if (objBoundingRect.left + objBoundingRect.width > canvasWidth) {
+            newLeft = obj.left - (objBoundingRect.left + objBoundingRect.width - canvasWidth);
+            needsAdjustment = true;
+            console.log('Adjusting right: overflow by', objBoundingRect.left + objBoundingRect.width - canvasWidth);
+          }
+          
+          // Check and adjust vertical position
+          if (objBoundingRect.top < 0) {
+            newTop = obj.top - objBoundingRect.top;
+            needsAdjustment = true;
+            console.log('Adjusting top: overflow by', objBoundingRect.top);
+          } else if (objBoundingRect.top + objBoundingRect.height > canvasHeight) {
+            newTop = obj.top - (objBoundingRect.top + objBoundingRect.height - canvasHeight);
+            needsAdjustment = true;
+            console.log('Adjusting bottom: overflow by', objBoundingRect.top + objBoundingRect.height - canvasHeight);
+          }
+          
+          // Apply snap-back if needed with smooth animation
+          if (needsAdjustment) {
+            console.log('Snapping back from', obj.left, obj.top, 'to', newLeft, newTop);
+            obj.animate({
+              left: newLeft,
+              top: newTop
+            }, {
+              duration: 150,
+              onChange: canvas.renderAll.bind(canvas),
+              onComplete: function() {
+                obj.setCoords();
+                canvas.renderAll();
+                console.log('Snap-back complete');
+              }
+            });
+          } else {
+            console.log('No adjustment needed - object within bounds');
+          }
+        }
+        
         // Clear guidelines after moving is complete
         setTimeout(() => {
           if (!canvas.getActiveObject()) {
@@ -691,9 +755,51 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       });
       
       canvas.on('object:modified', function (e) {
-        if (e.target && selectionLayer) {
-          createCustomSelectionOutline();
+        const obj = e.target;
+        
+        if (obj) {
+          // Snap back to canvas bounds if object is outside
+          const objBoundingRect = obj.getBoundingRect(true);
+          const canvasWidth = canvas.width;
+          const canvasHeight = canvas.height;
+          
+          let needsAdjustment = false;
+          let newLeft = obj.left;
+          let newTop = obj.top;
+          
+          // Check and adjust horizontal position
+          if (objBoundingRect.left < 0) {
+            newLeft = obj.left - objBoundingRect.left;
+            needsAdjustment = true;
+          } else if (objBoundingRect.left + objBoundingRect.width > canvasWidth) {
+            newLeft = obj.left - (objBoundingRect.left + objBoundingRect.width - canvasWidth);
+            needsAdjustment = true;
+          }
+          
+          // Check and adjust vertical position
+          if (objBoundingRect.top < 0) {
+            newTop = obj.top - objBoundingRect.top;
+            needsAdjustment = true;
+          } else if (objBoundingRect.top + objBoundingRect.height > canvasHeight) {
+            newTop = obj.top - (objBoundingRect.top + objBoundingRect.height - canvasHeight);
+            needsAdjustment = true;
+          }
+          
+          // Apply snap-back if needed
+          if (needsAdjustment) {
+            obj.set({
+              left: newLeft,
+              top: newTop
+            });
+            obj.setCoords();
+            canvas.renderAll();
+          }
+          
+          if (selectionLayer) {
+            createCustomSelectionOutline();
+          }
         }
+        
         // Clear guidelines after object modification is complete
         setTimeout(() => {
           if (!canvas.getActiveObject()) {
@@ -709,6 +815,47 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       });
       
       canvas.on('object:scaled', function (e) {
+        const obj = e.target;
+        
+        if (obj) {
+          // Ensure object stays within bounds after scaling
+          const objBoundingRect = obj.getBoundingRect(true);
+          const canvasWidth = canvas.width;
+          const canvasHeight = canvas.height;
+          
+          let newLeft = obj.left;
+          let newTop = obj.top;
+          let needsAdjustment = false;
+          
+          // Horizontal bounds checking
+          if (objBoundingRect.left < 0) {
+            newLeft = obj.left - objBoundingRect.left;
+            needsAdjustment = true;
+          } else if (objBoundingRect.left + objBoundingRect.width > canvasWidth) {
+            newLeft = obj.left - (objBoundingRect.left + objBoundingRect.width - canvasWidth);
+            needsAdjustment = true;
+          }
+          
+          // Vertical bounds checking
+          if (objBoundingRect.top < 0) {
+            newTop = obj.top - objBoundingRect.top;
+            needsAdjustment = true;
+          } else if (objBoundingRect.top + objBoundingRect.height > canvasHeight) {
+            newTop = obj.top - (objBoundingRect.top + objBoundingRect.height - canvasHeight);
+            needsAdjustment = true;
+          }
+          
+          // Apply adjustment if needed
+          if (needsAdjustment) {
+            obj.set({
+              left: newLeft,
+              top: newTop
+            });
+            obj.setCoords();
+            canvas.renderAll();
+          }
+        }
+        
         // Clear guidelines after scaling is complete
         setTimeout(() => {
           if (!canvas.getActiveObject()) {
@@ -724,6 +871,47 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       });
       
       canvas.on('object:rotated', function (e) {
+        const obj = e.target;
+        
+        if (obj) {
+          // Ensure object stays within bounds after rotation
+          const objBoundingRect = obj.getBoundingRect(true);
+          const canvasWidth = canvas.width;
+          const canvasHeight = canvas.height;
+          
+          let newLeft = obj.left;
+          let newTop = obj.top;
+          let needsAdjustment = false;
+          
+          // Horizontal bounds checking
+          if (objBoundingRect.left < 0) {
+            newLeft = obj.left - objBoundingRect.left;
+            needsAdjustment = true;
+          } else if (objBoundingRect.left + objBoundingRect.width > canvasWidth) {
+            newLeft = obj.left - (objBoundingRect.left + objBoundingRect.width - canvasWidth);
+            needsAdjustment = true;
+          }
+          
+          // Vertical bounds checking
+          if (objBoundingRect.top < 0) {
+            newTop = obj.top - objBoundingRect.top;
+            needsAdjustment = true;
+          } else if (objBoundingRect.top + objBoundingRect.height > canvasHeight) {
+            newTop = obj.top - (objBoundingRect.top + objBoundingRect.height - canvasHeight);
+            needsAdjustment = true;
+          }
+          
+          // Apply adjustment if needed
+          if (needsAdjustment) {
+            obj.set({
+              left: newLeft,
+              top: newTop
+            });
+            obj.setCoords();
+            canvas.renderAll();
+          }
+        }
+        
         // Clear guidelines after rotation is complete
         setTimeout(() => {
           if (!canvas.getActiveObject()) {
