@@ -5,7 +5,6 @@ import { ButtonWithIcon } from 'components/reusableComponents/ButtonWithIcon';
 import ReusablePopup from '../ReusablePopup';
 import RemoveSilenceMenu from '../RemoveSilenceMenu/RemoveSilenceMenu';
 import PopupPortal from '../PopupPortal/PopupPortal';
-import { removeSilence } from '../../../services/audioApi';
 import { StoreContext } from '../../../mobx';
 import { runInAction } from 'mobx';
 import useUploadProgress from '../../../hooks/useUploadProgress';
@@ -874,162 +873,15 @@ const TimeLineControlPanel = ({
   };
 
   const handleRemoveSilenceApply = async (settings, audioId) => {
-    // Find audio element by provided ID
-    let audioElement = null;
-    if (audioId) {
-      audioElement = store.editorElements.find(
-        el => el.id === audioId && el.type === 'audio'
-      );
-    }
-
-    if (!audioElement) {
-      console.error('❌ No audio element available to process');
-      return;
-    }
-
     setIsProcessingSilence(true);
-    // Keep menu open and selection intact during processing
     setIsRemoveSilenceVisible(true);
 
-    // Set loading state on the audio element
-    const loadingElement = {
-      ...audioElement,
-      isLoading: true,
-    };
-    store.updateEditorElement(loadingElement);
-
     try {
-      const audioUrl = audioElement.src || audioElement.properties?.src;
-
-      if (!audioUrl) {
-        throw new Error('Audio URL not found');
-      }
-
-      const response = await removeSilence({
-        audioUrl,
-        startThreshold: settings.startThreshold,
-        stopThreshold: settings.stopThreshold,
-        stopDuration: settings.stopDuration,
-        startDuration: settings.startDuration,
-      });
-
-      if (response.success && response.processedAudioUrl) {
-        // Calculate new duration and timeFrame
-        const newDuration =
-          response.duration?.processedMs || audioElement.duration;
-        const currentStartTime =
-          audioElement.timeFrame?.start || audioElement.from || 1;
-
-        // Update the audio element's src with the processed audio URL
-        const updatedElement = {
-          ...audioElement,
-          duration: newDuration, // Update duration with processed duration
-          isLoading: false, // Remove loading state
-          timeFrame: {
-            start: currentStartTime,
-            end: currentStartTime + newDuration, // Update end time based on new duration
-          },
-          properties: {
-            ...audioElement.properties,
-            src: response.processedAudioUrl, // Оновлюємо src в properties
-            originalAudioUrl: response.originalAudioUrl,
-            silenceRemovalStats: response.statistics,
-            silenceRemovalSettings: response.settings,
-            durationInfo: response.duration, // Store full duration info
-          },
-        };
-
-        // Use runInAction to ensure MobX tracks the changes
-        runInAction(() => {
-          store.updateEditorElement(updatedElement);
-
-          // Update HTML audio element src directly
-          const htmlAudioElement = document.getElementById(
-            audioElement.properties.elementId
-          );
-          if (htmlAudioElement) {
-            htmlAudioElement.src = response.processedAudioUrl;
-            htmlAudioElement.load(); // Reload audio with new src
-          }
-
-          // Force MobX to trigger updates by touching the editorElements array
-          store.editorElements = [...store.editorElements];
-
-          // Синхронізація зображень (опціонально)
-          if (settings.syncImages) {
-            // Proportionally adjust image elements to fit new audio duration
-            const originalAudioDuration = audioElement.duration;
-            const compressionRatio = newDuration / originalAudioDuration;
-
-            // Find all image elements - try different approaches
-            let imageElements = store.editorElements.filter(
-              el => el.type === 'imageUrl' && el.row === audioElement.row
-            );
-
-            // If no images in same row, try finding all images
-            if (imageElements.length === 0) {
-              imageElements = store.editorElements.filter(
-                el => el.type === 'imageUrl'
-              );
-            }
-
-            // Update each image element proportionally
-            imageElements.forEach(imageElement => {
-              const originalStart = imageElement.timeFrame.start;
-              const originalEnd = imageElement.timeFrame.end;
-              const originalImageDuration = originalEnd - originalStart;
-
-              // Calculate new proportional timings
-              const newStart = originalStart * compressionRatio;
-              const newEnd =
-                newStart + originalImageDuration * compressionRatio;
-
-              const updatedImageElement = {
-                ...imageElement,
-                timeFrame: {
-                  start: newStart,
-                  end: newEnd,
-                },
-              };
-
-              store.updateEditorElement(updatedImageElement);
-            });
-          }
-
-          // Update maxTime if this audio was the longest element
-          const audioEndTime = currentStartTime + newDuration;
-          const maxElementTime = Math.max(
-            ...store.editorElements.map(el => el.timeFrame?.end || 0),
-            audioEndTime
-          );
-
-          if (maxElementTime < store.maxTime) {
-            // If all elements now end before current maxTime, adjust maxTime proportionally
-            const newMaxTime = Math.max(
-              maxElementTime + 5000,
-              newDuration + 10000
-            );
-            store.setMaxTime(newMaxTime);
-          }
-
-          // Refresh elements to ensure audio is reloaded
-          store.refreshElements();
-        });
-
-        // Close after success
-        setIsRemoveSilenceVisible(false);
-      } else {
-        throw new Error(response.message || 'Failed to remove silence');
-      }
+      await store.removeSilenceFromAudioLocal(audioId, settings);
+      setIsRemoveSilenceVisible(false);
     } catch (error) {
-      console.error('❌ Error removing silence:', error);
-
-      // Remove loading state on error
-      const errorElement = {
-        ...audioElement,
-        isLoading: false,
-      };
-      store.updateEditorElement(errorElement);
+      console.error('Error in handleRemoveSilenceApply:', error);
+      toast.error('Failed to remove silence');
     } finally {
       setIsProcessingSilence(false);
     }

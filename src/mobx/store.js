@@ -4015,6 +4015,179 @@ export class Store {
     }
   }
 
+  async removeSilenceFromAudioLocal(audioId, settings) {
+    const audioElement = this.editorElements.find(
+      el => el.id === audioId && el.type === 'audio'
+    );
+
+    if (!audioElement) {
+      console.error('No audio element available to process');
+      return;
+    }
+
+    runInAction(() => {
+      this.updateEditorElement({
+        ...audioElement,
+        isLoading: true,
+      });
+    });
+
+    try {
+      const audioUrl = audioElement.src || audioElement.properties?.src;
+
+      if (!audioUrl) {
+        throw new Error('Audio URL not found');
+      }
+
+      const response = await fetch(audioUrl);
+      const arrayBuffer = await response.arrayBuffer();
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+      const channelData = audioBuffer.getChannelData(0);
+      const sampleRate = audioBuffer.sampleRate;
+      const totalSamples = channelData.length;
+
+      const parseDb = (val) => {
+        if (!val && val !== 0) return -45;
+        if (typeof val === 'string') {
+          const p = parseFloat(val.replace('dB', ''));
+          return isNaN(p) ? -45 : p;
+        }
+        return isNaN(val) ? -45 : val;
+      };
+
+      const startDb = parseDb(settings.startThreshold);
+      const stopDb = parseDb(settings.stopThreshold);
+      const startThresholdLinear = Math.pow(10, startDb / 20);
+      const stopThresholdLinear = Math.pow(10, stopDb / 20);
+
+      const startDurSec = parseFloat(settings.startDuration) || 0.1;
+      const stopDurSec = parseFloat(settings.stopDuration) || 0.3;
+      const startWindowSize = Math.max(1, Math.floor(startDurSec * sampleRate));
+      const stopWindowSize = Math.max(1, Math.floor(stopDurSec * sampleRate));
+
+      let firstSample = 0;
+      let lastSample = totalSamples - 1;
+
+      for (let i = 0; i < totalSamples - startWindowSize; i += Math.max(1, Math.floor(startWindowSize / 2))) {
+        let sum = 0;
+        for (let j = 0; j < startWindowSize; j++) {
+          sum += Math.abs(channelData[i + j]);
+        }
+        if ((sum / startWindowSize) > startThresholdLinear) {
+          firstSample = i;
+          break;
+        }
+      }
+
+      for (let i = totalSamples - 1; i >= firstSample + stopWindowSize; i -= Math.max(1, Math.floor(stopWindowSize / 2))) {
+        let sum = 0;
+        for (let j = 0; j < stopWindowSize; j++) {
+          sum += Math.abs(channelData[i - j]);
+        }
+        if ((sum / stopWindowSize) > stopThresholdLinear) {
+          lastSample = i;
+          break;
+        }
+      }
+
+      const leadingSilenceMs = (firstSample / sampleRate) * 1000;
+      const trailingSilenceMs = ((totalSamples - 1 - lastSample) / sampleRate) * 1000;
+
+      const originalDurationMs = (totalSamples / sampleRate) * 1000;
+      const newDurationMs = Math.max(100, originalDurationMs - leadingSilenceMs - trailingSilenceMs);
+
+      runInAction(() => {
+        const currentStartTime = audioElement.timeFrame?.start || 0;
+        const currentOffset = audioElement.properties?.audioOffset || 0;
+
+        const updatedElement = {
+          ...audioElement,
+          duration: newDurationMs,
+          isLoading: false,
+          timeFrame: {
+            start: currentStartTime,
+            end: currentStartTime + newDurationMs,
+          },
+          properties: {
+            ...audioElement.properties,
+            audioOffset: currentOffset + leadingSilenceMs,
+            silenceRemovalStats: {
+              leadingRemovedMs: leadingSilenceMs,
+              trailingRemovedMs: trailingSilenceMs,
+              originalDurationMs,
+              newDurationMs
+            }
+          },
+        };
+
+        this.updateEditorElement(updatedElement);
+
+        this.editorElements = [...this.editorElements];
+
+        if (settings.syncImages) {
+          const compressionRatio = newDurationMs / originalDurationMs;
+
+          let imageElements = this.editorElements.filter(
+            el => el.type === 'imageUrl' && el.row === audioElement.row
+          );
+
+          if (imageElements.length === 0) {
+            imageElements = this.editorElements.filter(
+              el => el.type === 'imageUrl'
+            );
+          }
+
+          imageElements.forEach(imageElement => {
+            const originalStart = imageElement.timeFrame.start;
+            const originalEnd = imageElement.timeFrame.end;
+            const originalImageDuration = originalEnd - originalStart;
+
+            const newStart = originalStart * compressionRatio;
+            const newEnd = newStart + originalImageDuration * compressionRatio;
+
+            this.updateEditorElement({
+              ...imageElement,
+              timeFrame: {
+                start: newStart,
+                end: newEnd,
+              },
+            });
+          });
+        }
+
+        const audioEndTime = currentStartTime + newDurationMs;
+        const maxElementTime = Math.max(
+          ...this.editorElements.map(el => el.timeFrame?.end || 0),
+          audioEndTime
+        );
+
+        if (maxElementTime < this.maxTime) {
+          this.setMaxTime(maxElementTime + 5000);
+        }
+
+        this.refreshElements();
+
+        if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+          window.dispatchSaveTimelineState(this);
+        }
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Error removing silence on client side:', error);
+      runInAction(() => {
+        this.updateEditorElement({
+          ...audioElement,
+          isLoading: false,
+        });
+      });
+      throw error;
+    }
+  }
+
+
   updateEditorElement(editorElement) {
     const index = this.editorElements.findIndex(
       el => el.id === editorElement.id
@@ -8963,6 +9136,281 @@ export class Store {
     if (!this.isInitializing) {
     }
   }
+
+  splitVideoElement(element, splitPoint) {
+    if (splitPoint <= element.timeFrame.start || splitPoint >= element.timeFrame.end) {
+      console.warn('Split point must be within element timeframe');
+      return;
+    }
+
+    const originalVideoOffset = element.properties?.videoOffset || 0;
+
+    const firstClip = {
+      ...element,
+      id: getUid(),
+      name: `${element.name} (1)`,
+      timeFrame: {
+        start: element.timeFrame.start,
+        end: splitPoint,
+      },
+      properties: {
+        ...element.properties,
+        videoOffset: originalVideoOffset,
+      },
+    };
+
+    const secondClip = {
+      ...element,
+      id: getUid(),
+      name: `${element.name} (2)`,
+      timeFrame: {
+        start: splitPoint,
+        end: element.timeFrame.end,
+      },
+      properties: {
+        ...element.properties,
+        videoOffset: originalVideoOffset + (splitPoint - element.timeFrame.start),
+      },
+    };
+
+    const videoElement = this.videos.find(v => v.id === element.properties?.elementId?.replace('video-', ''))?.element;
+
+    if (videoElement && this.canvas) {
+      const canvasWidth = this.canvas.width;
+      const canvasHeight = this.canvas.height;
+      const scale = Math.min(
+        canvasWidth / videoElement.videoWidth,
+        canvasHeight / videoElement.videoHeight
+      );
+      const xPos = (canvasWidth - videoElement.videoWidth * scale) / 2;
+
+      const fabricVideo1 = new fabric.VideoImage(videoElement, {
+        left: element.placement?.x || xPos,
+        top: element.placement?.y || 0,
+        width: element.placement?.width || videoElement.videoWidth * scale,
+        height: element.placement?.height || videoElement.videoHeight * scale,
+        scaleX: element.placement?.scaleX || scale,
+        scaleY: element.placement?.scaleY || scale,
+        angle: element.placement?.rotation || 0,
+        selectable: true,
+        objectCaching: false,
+        lockUniScaling: false,
+        hasControls: true,
+        hasBorders: true,
+        type: 'video',
+      });
+
+      const fabricVideo2 = new fabric.VideoImage(videoElement, {
+        left: element.placement?.x || xPos,
+        top: element.placement?.y || 0,
+        width: element.placement?.width || videoElement.videoWidth * scale,
+        height: element.placement?.height || videoElement.videoHeight * scale,
+        scaleX: element.placement?.scaleX || scale,
+        scaleY: element.placement?.scaleY || scale,
+        angle: element.placement?.rotation || 0,
+        selectable: true,
+        objectCaching: false,
+        lockUniScaling: false,
+        hasControls: true,
+        hasBorders: true,
+        type: 'video',
+      });
+
+      firstClip.fabricObject = fabricVideo1;
+      secondClip.fabricObject = fabricVideo2;
+
+      // Add fabric objects to canvas
+      this.canvas.add(fabricVideo1);
+      this.canvas.add(fabricVideo2);
+    }
+
+    // Remove original element and add new clips
+    runInAction(() => {
+      const elementIndex = this.editorElements.findIndex(el => el.id === element.id);
+      if (elementIndex !== -1) {
+        if (element.fabricObject && this.canvas?.contains(element.fabricObject)) {
+          this.canvas.remove(element.fabricObject);
+        }
+
+        this.editorElements.splice(elementIndex, 1);
+        this.editorElements.push(firstClip, secondClip);
+      }
+    });
+
+    // Refresh elements and sync with Redux
+    this.refreshElements();
+
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+  }
+
+  // Split an audio element at the specified split point
+  splitAudioElement(element, splitPoint) {
+    if (splitPoint <= element.timeFrame.start || splitPoint >= element.timeFrame.end) {
+      console.warn('Split point must be within element timeframe');
+      return;
+    }
+
+    const originalAudioOffset = element.properties?.audioOffset || 0;
+
+    const firstClip = {
+      ...element,
+      id: getUid(),
+      name: `${element.name} (1)`,
+      timeFrame: {
+        start: element.timeFrame.start,
+        end: splitPoint,
+      },
+      properties: {
+        ...element.properties,
+        elementId: `audio-${getUid()}`,
+        audioOffset: originalAudioOffset,
+      },
+    };
+
+    const secondClip = {
+      ...element,
+      id: getUid(),
+      name: `${element.name} (2)`,
+      timeFrame: {
+        start: splitPoint,
+        end: element.timeFrame.end,
+      },
+      properties: {
+        ...element.properties,
+        elementId: `audio-${getUid()}`,
+        audioOffset: originalAudioOffset + (splitPoint - element.timeFrame.start),
+      },
+    };
+
+    // Remove original element and add new clips
+    runInAction(() => {
+      const elementIndex = this.editorElements.findIndex(el => el.id === element.id);
+      if (elementIndex !== -1) {
+        const audioElement = document.getElementById(element.properties?.elementId);
+        if (audioElement) {
+          audioElement.remove();
+        }
+
+        this.editorElements.splice(elementIndex, 1);
+        this.editorElements.push(firstClip, secondClip);
+
+        [firstClip, secondClip].forEach(clip => {
+          const newAudioElement = document.createElement('audio');
+          newAudioElement.id = clip.properties.elementId;
+          newAudioElement.src = clip.properties.src;
+          newAudioElement.playbackRate = this.playbackRate;
+          newAudioElement.volume = clip.properties?.volume !== undefined ? clip.properties.volume : this.volume;
+
+          if (clip.properties.audioOffset !== undefined) {
+            newAudioElement.currentTime = clip.properties.audioOffset / 1000;
+          }
+
+          document.body.appendChild(newAudioElement);
+        });
+      }
+    });
+
+    this.refreshElements();
+
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+  }
+
+  // Split an image element at the specified split point
+  splitImageElement(element, splitPoint) {
+    if (splitPoint <= element.timeFrame.start || splitPoint >= element.timeFrame.end) {
+      console.warn('Split point must be within element timeframe');
+      return;
+    }
+
+    const firstClip = {
+      ...element,
+      id: getUid(),
+      name: `${element.name} (1)`,
+      timeFrame: {
+        start: element.timeFrame.start,
+        end: splitPoint,
+      },
+    };
+
+    const secondClip = {
+      ...element,
+      id: getUid(),
+      name: `${element.name} (2)`,
+      timeFrame: {
+        start: splitPoint,
+        end: element.timeFrame.end,
+      },
+    };
+
+    if (this.canvas) {
+      const createImageObject = (clip) => {
+        return new Promise((resolve) => {
+          fabric.Image.fromURL(
+            clip.properties?.src,
+            img => {
+              img.set({
+                name: clip.id,
+                left: clip.placement?.x || 0,
+                top: clip.placement?.y || 0,
+                scaleX: clip.placement?.scaleX || 1,
+                scaleY: clip.placement?.scaleY || 1,
+                angle: clip.placement?.rotation || 0,
+                selectable: true,
+                lockUniScaling: true,
+                objectCaching: true,
+              });
+              clip.fabricObject = img;
+              this.canvas.add(img);
+              resolve(img);
+            },
+            { crossOrigin: 'Anonymous' }
+          );
+        });
+      };
+
+      Promise.all([
+        createImageObject(firstClip),
+        createImageObject(secondClip)
+      ]).then(() => {
+        runInAction(() => {
+          const elementIndex = this.editorElements.findIndex(el => el.id === element.id);
+          if (elementIndex !== -1) {
+            if (element.fabricObject && this.canvas?.contains(element.fabricObject)) {
+              this.canvas.remove(element.fabricObject);
+            }
+
+            this.editorElements.splice(elementIndex, 1);
+            this.editorElements.push(firstClip, secondClip);
+          }
+        });
+
+        this.refreshElements();
+
+        if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+          window.dispatchSaveTimelineState(this);
+        }
+      });
+    } else {
+      runInAction(() => {
+        const elementIndex = this.editorElements.findIndex(el => el.id === element.id);
+        if (elementIndex !== -1) {
+          this.editorElements.splice(elementIndex, 1);
+          this.editorElements.push(firstClip, secondClip);
+        }
+      });
+
+      this.refreshElements();
+
+      if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+        window.dispatchSaveTimelineState(this);
+      }
+    }
+  }
+
 
   removeAllTextElementsWithPointId() {
     // Filter out all text elements with pointId in a single pass
