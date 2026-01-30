@@ -5,7 +5,6 @@ import { ButtonWithIcon } from 'components/reusableComponents/ButtonWithIcon';
 import ReusablePopup from '../ReusablePopup';
 import RemoveSilenceMenu from '../RemoveSilenceMenu/RemoveSilenceMenu';
 import PopupPortal from '../PopupPortal/PopupPortal';
-import { removeSilence } from '../../../services/audioApi';
 import { StoreContext } from '../../../mobx';
 import { runInAction } from 'mobx';
 import useUploadProgress from '../../../hooks/useUploadProgress';
@@ -873,6 +872,7 @@ const TimeLineControlPanel = ({
     setIsRemoveSilenceVisible(true);
   };
 
+  /*
   const handleRemoveSilenceApply = async (settings, audioId) => {
     // Find audio element by provided ID
     let audioElement = null;
@@ -1030,6 +1030,22 @@ const TimeLineControlPanel = ({
         isLoading: false,
       };
       store.updateEditorElement(errorElement);
+    } finally {
+      setIsProcessingSilence(false);
+    }
+  };
+  */
+
+  const handleRemoveSilenceApply = async (settings, audioId) => {
+    setIsProcessingSilence(true);
+    setIsRemoveSilenceVisible(true);
+
+    try {
+      await store.removeSilenceFromAudioLocal(audioId, settings);
+      setIsRemoveSilenceVisible(false);
+    } catch (error) {
+      console.error('Error in handleRemoveSilenceApply:', error);
+      toast.error('Failed to remove silence');
     } finally {
       setIsProcessingSilence(false);
     }

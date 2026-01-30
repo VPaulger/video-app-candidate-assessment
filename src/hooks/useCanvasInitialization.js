@@ -631,6 +631,34 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
 
       store.containerObserver = observer;
 
+      const clampObjectToBounds = obj => {
+        if (!obj) return;
+        const boundingRect = obj.getBoundingRect(true);
+        let deltaX = 0;
+        let deltaY = 0;
+        if (boundingRect.left < 0) {
+          deltaX = -boundingRect.left;
+        } else if (boundingRect.left + boundingRect.width > canvas.width) {
+          deltaX = canvas.width - (boundingRect.left + boundingRect.width);
+        }
+        if (boundingRect.top < 0) {
+          deltaY = -boundingRect.top;
+        } else if (boundingRect.top + boundingRect.height > canvas.height) {
+          deltaY = canvas.height - (boundingRect.top + boundingRect.height);
+        }
+        if (deltaX !== 0 || deltaY !== 0) {
+          obj.set({
+            left: obj.left + deltaX,
+            top: obj.top + deltaY,
+          });
+          obj.setCoords();
+          canvas.renderAll();
+          if (typeof createCustomSelectionOutline === 'function') {
+            createCustomSelectionOutline();
+          }
+        }
+      };
+
       canvas.on('selection:created', function(e) {
         // Enable controls for video objects when selected
         if (e.selected && e.selected.length > 0) {
@@ -691,10 +719,12 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       });
       
       canvas.on('object:modified', function (e) {
-        if (e.target && selectionLayer) {
-          createCustomSelectionOutline();
+        if (e.target) {
+          clampObjectToBounds(e.target);
+          if (selectionLayer) {
+            createCustomSelectionOutline();
+          }
         }
-        // Clear guidelines after object modification is complete
         setTimeout(() => {
           if (!canvas.getActiveObject()) {
             store.clearGuidelines();
@@ -709,7 +739,6 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       });
       
       canvas.on('object:scaled', function (e) {
-        // Clear guidelines after scaling is complete
         setTimeout(() => {
           if (!canvas.getActiveObject()) {
             store.clearGuidelines();
@@ -724,18 +753,6 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
       });
       
       canvas.on('object:rotated', function (e) {
-        // Clear guidelines after rotation is complete
-        setTimeout(() => {
-          if (!canvas.getActiveObject()) {
-            store.clearGuidelines();
-          }
-        }, 100);
-      });
-      canvas.on('object:modified', function (e) {
-        if (e.target && selectionLayer) {
-          createCustomSelectionOutline();
-        }
-        // Clear guidelines after object modification is complete
         setTimeout(() => {
           if (!canvas.getActiveObject()) {
             store.clearGuidelines();
@@ -743,8 +760,10 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
         }, 100);
       });
       canvas.on('mouse:up', e => {
-        if (canvas.getActiveObject()) {
-          lastActiveObject = canvas.getActiveObject();
+        const activeObject = canvas.getActiveObject();
+        if (activeObject) {
+          lastActiveObject = activeObject;
+          clampObjectToBounds(activeObject);
         }
 
         if (!isResizing && !activeControlPoint) {
