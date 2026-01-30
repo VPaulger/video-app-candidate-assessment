@@ -4302,13 +4302,16 @@ export class Store {
         };
         const thumbnails = await generateThumbnails();
         // Calculate optimal placement and scaling
-        const canvasWidth = this.canvas?.width || 1920;
-        const canvasHeight = this.canvas?.height || 1080;
+        const canvasWidth = this.canvas?.getWidth() || this.canvas?.width || 1920;
+        const canvasHeight = this.canvas?.getHeight() || this.canvas?.height || 1080;
         const scale = Math.min(
           canvasWidth / videoElement.videoWidth,
           canvasHeight / videoElement.videoHeight
         );
-        const xPos = (canvasWidth - videoElement.videoWidth * scale) / 2;
+        const scaledWidth = videoElement.videoWidth * scale;
+        const scaledHeight = videoElement.videoHeight * scale;
+        const xPos = (canvasWidth - scaledWidth) / 2;
+        const yPos = (canvasHeight - scaledHeight) / 2;
         // Find a suitable row for the video (similar logic to handleVideoUploadFromUrl)
         const existingElements = this.editorElements;
         let newRow = 0;
@@ -4466,7 +4469,7 @@ export class Store {
             type: 'video',
             placement: {
               x: xPos,
-              y: 0,
+              y: yPos,
               width: videoElement.videoWidth * scale,
               height: videoElement.videoHeight * scale,
               rotation: 0,
@@ -4706,13 +4709,16 @@ export class Store {
         };
 
         const thumbnails = await generateThumbnails();
-        const canvasWidth = this.canvas?.width || 1920;
-        const canvasHeight = this.canvas?.height || 1080;
+      const canvasWidth = this.canvas?.getWidth() || this.canvas?.width || 1920;
+        const canvasHeight = this.canvas?.getHeight() || this.canvas?.height || 1080;
         const scale = Math.min(
           canvasWidth / videoElement.videoWidth,
           canvasHeight / videoElement.videoHeight
         );
-        const xPos = (canvasWidth - videoElement.videoWidth * scale) / 2;
+        const scaledWidth = videoElement.videoWidth * scale;
+        const scaledHeight = videoElement.videoHeight * scale;
+        const xPos = (canvasWidth - scaledWidth) / 2;
+        const yPos = (canvasHeight - scaledHeight) / 2;
 
         // Find a suitable row for the video
         const existingElements = this.editorElements;
@@ -4882,7 +4888,7 @@ export class Store {
           // Replace the placeholder with the actual video
           const fabricVideo = new fabric.VideoImage(videoElement, {
             left: xPos,
-            top: 0,
+            top: yPos,
             width: videoElement.videoWidth * scale,
             height: videoElement.videoHeight * scale,
             scaleX: scale,
@@ -4906,7 +4912,7 @@ export class Store {
             type: 'video',
             placement: {
               x: xPos,
-              y: 0,
+              y: yPos,
               width: videoElement.videoWidth * scale,
               height: videoElement.videoHeight * scale,
               rotation: 0,
@@ -5018,7 +5024,7 @@ export class Store {
               type: 'video',
               placement: {
                 x: xPos,
-                y: 0,
+                y: yPos,
                 width: videoElement.videoWidth * scale,
                 height: videoElement.videoHeight * scale,
                 rotation: 0,
@@ -13803,6 +13809,160 @@ export class Store {
     this.ghostState.dragOverRowIndex = null;
 
     this.refreshElements?.();
+  });
+
+  // Split a video element at the specified split point
+  splitVideoElement = action((item, splitPoint) => {
+    // 1. Early exits & Destructuring
+    if (!item || item.type !== 'video') {
+      console.warn('Invalid item type for splitVideoElement');
+      return;
+    }
+
+    const { start, end } = item.timeFrame;
+    if (splitPoint <= start || splitPoint >= end) {
+      console.warn('Split point is outside the element time range');
+      return;
+    }
+
+    // 2. Pre-calculate shared values
+    const originalIndex = this.editorElements.findIndex(elm => elm.id === item.id);
+    if (originalIndex === -1) return;
+
+    const firstDuration = splitPoint - start;
+    const secondDuration = end - splitPoint;
+    const currentProperties = item.properties || {};
+    const currentVideoOffset = currentProperties.videoOffset || 0;
+
+    // 3. Optimized Thumbnail Splitting
+    let firstThumbnails = currentProperties.thumbnails;
+    let secondThumbnails = currentProperties.thumbnails;
+
+    if (Array.isArray(currentProperties.thumbnails)) {
+      const totalDuration = end - start;
+      const splitIndex = Math.ceil(currentProperties.thumbnails.length * (firstDuration / totalDuration));
+      
+      firstThumbnails = currentProperties.thumbnails.slice(0, splitIndex);
+      secondThumbnails = currentProperties.thumbnails.slice(splitIndex);
+    }
+
+    // 4. Factory for creating parts (Reduces repeated code)
+    const createPart = (duration, startTime, endTime, offset, thumbs) => ({
+      ...item,
+      id: getUid(),
+      fabricObject: null,
+      duration,
+      timeFrame: { start: startTime, end: endTime },
+      properties: {
+        ...currentProperties,
+        videoOffset: offset,
+        thumbnails: thumbs?.length > 0 ? thumbs : currentProperties.thumbnails,
+      },
+    });
+
+    const firstPart = createPart(firstDuration, start, splitPoint, currentVideoOffset, firstThumbnails);
+    const secondPart = createPart(secondDuration, splitPoint, end, currentVideoOffset + firstDuration, secondThumbnails);
+
+    // 5. Atomic Update
+    this.editorElements.splice(originalIndex, 1, firstPart, secondPart);
+
+    this.refreshElements();
+
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+  });
+
+  // Split an image element at the specified split point
+  splitImageElement = action((item, splitPoint) => {
+    // 1. Validation & Early Exit
+    if (!item || item.type !== 'imageUrl') {
+      console.warn('Invalid item type for splitImageElement');
+      return;
+    }
+
+    const { start, end } = item.timeFrame;
+    if (splitPoint <= start || splitPoint >= end) {
+      console.warn('Split point is outside the element time range');
+      return;
+    }
+
+    // Find index immediately to avoid processing if item is missing
+    const originalIndex = this.editorElements.findIndex(elm => elm.id === item.id);
+    if (originalIndex === -1) return;
+
+    // 2. Factory function for creating split parts
+    const createSplitPart = (startTime, endTime) => ({
+      ...item,
+      id: getUid(),
+      fabricObject: null,
+      timeFrame: { start: startTime, end: endTime },
+    });
+
+    // 3. Generate parts and update state
+    const firstPart = createSplitPart(start, splitPoint);
+    const secondPart = createSplitPart(splitPoint, end);
+
+    // Perform the replacement in one go
+    this.editorElements.splice(originalIndex, 1, firstPart, secondPart);
+
+    // 4. State Persistence
+    this.refreshElements();
+
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
+  });
+
+  // Split an audio element at the specified split point
+  splitAudioElement = action((item, splitPoint) => {
+    // 1. Validation & Early Exit
+    if (!item || item.type !== 'audio') {
+      console.warn('Invalid item type for splitAudioElement');
+      return;
+    }
+
+    const { start, end } = item.timeFrame;
+    if (splitPoint <= start || splitPoint >= end) {
+      console.warn('Split point is outside the element time range');
+      return;
+    }
+
+    // Find index early to avoid redundant processing
+    const originalIndex = this.editorElements.findIndex(elm => elm.id === item.id);
+    if (originalIndex === -1) return;
+
+    // 2. Pre-calculate values
+    const currentProperties = item.properties || {};
+    const currentAudioOffset = currentProperties.audioOffset || 0;
+    const firstDuration = splitPoint - start;
+    const secondDuration = end - splitPoint;
+
+    // 3. Helper for generating audio parts
+    const createAudioPart = (duration, startTime, endTime, offset) => ({
+      ...item,
+      id: getUid(),
+      duration,
+      timeFrame: { start: startTime, end: endTime },
+      properties: {
+        ...currentProperties,
+        audioOffset: offset,
+        elementId: `audio-${getUid()}`,
+      },
+    });
+
+    // 4. Create parts and swap in the array
+    const firstPart = createAudioPart(firstDuration, start, splitPoint, currentAudioOffset);
+    const secondPart = createAudioPart(secondDuration, splitPoint, end, currentAudioOffset + firstDuration);
+
+    this.editorElements.splice(originalIndex, 1, firstPart, secondPart);
+
+    // 5. Finalize State
+    this.refreshElements();
+
+    if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+      window.dispatchSaveTimelineState(this);
+    }
   });
 }
 
